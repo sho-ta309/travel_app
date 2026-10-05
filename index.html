@@ -183,7 +183,7 @@
         img.style.width = '100px';
         popup.appendChild(img);
       }
-      const marker = L.marker([r.lat, r.lng]).addTo(map).bindPopup(popup);
+      const marker = L.marker([r.lat, r.lng]).addTo(map).bindPopup(popup, {maxWidth: 150});
       markers.push(marker);
 
       // 一覧に1件分のカードを追加
