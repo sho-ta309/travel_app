@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>旅行記録アプリ</title>
+
+<!-- 地図ライブラリ Leaflet（CDNから読み込むのでインストール不要。ネット接続が必要です） -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<style>
+  /* ===== CSS：見た目の設定 ===== */
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; }
+
+  /* 左：サイドバー（フォームと一覧） */
+  #sidebar { width: 320px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
+  /* 右：地図（残りの幅をすべて使う） */
+  #map { flex: 1; }
+
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  label { display: block; margin-top: 8px; font-size: 13px; }
+  input, textarea, button { width: 100%; padding: 6px; margin-top: 2px; font-size: 14px; }
+  button { background: #2a7de1; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+  #status { font-size: 13px; color: #c0392b; margin-top: 6px; }
+
+  .record { background: white; border-radius: 6px; padding: 8px; margin-top: 8px; cursor: pointer; }
+  .record img { width: 100%; border-radius: 4px; margin-top: 4px; }
+  .record .del { background: #c0392b; width: auto; padding: 2px 8px; font-size: 12px; }
+
+  /* スマホなど狭い画面では縦並びにする */
+  @media (max-width: 700px) {
+    body { flex-direction: column-reverse; }
+    #sidebar { width: 100%; height: 50%; }
+  }
+</style>
+</head>
+
+<body>
+  <!-- ===== HTML：画面の部品 ===== -->
+  <div id="sidebar">
+    <h1> 旅行記録</h1>
+    <p style="font-size:13px">① 地図をクリックして場所を選ぶ → ② 入力して保存</p>
+
+    <form id="form">
+      <label>タイトル <input id="title" required placeholder="例：清水寺"></label>
+      <label>日付 <input id="date" type="date" required></label>
+      <label>メモ <textarea id="memo" rows="3"></textarea></label>
+      <label>写真 <input id="photo" type="file" accept="image/*"></label>
+      <button type="submit">この場所を記録する</button>
+      <div id="status">地図をクリックして場所を選んでください</div>
+    </form>
+
+    <h2 style="font-size:16px">記録一覧</h2>
+    <div id="list"></div>
+  </div>
+
+  <div id="map"></div>
+
+<script>
+  // ===== JavaScript：動きの部分 =====
+
+  // --- 1. 地図を表示する ---
+  // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
+  const map = L.map('map').setView([35.68, 139.76], 5);
+
+  // 地図画像（タイル）の取得元として OpenStreetMap を指定
+  L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+    attribution: '&copy; 国土地理院',
+    maxZoom: 18
+  }).addTo(map);
+
+  // --- 2. データの準備 ---
+  const STORAGE_KEY = 'travel-log-records';
+
+  // 保存データを読み込む。何も無ければ空の配列 []
+  // localStorage は文字列しか保存できないので、JSON.parse で配列に戻す
+  let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+
+  let selectedLatLng = null;   // 地図でクリックされた場所
+  let tempMarker = null;       // 選択中の仮ピン
+  let markers = [];            // 表示中のピン（描き直すときに消すため保持）
+
+  // 保存する関数：配列 → JSON文字列 → localStorage
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    } catch (e) {
+      // 写真が多すぎて容量オーバーした場合
+      alert('保存できませんでした（容量オーバーかもしれません）');
+    }
+  }
+
+  // --- 3. 地図クリックで場所を選ぶ ---
+  // map.on('click', 関数)：「クリックされたらこの関数を実行して」という登録（イベント）
+  map.on('click', function (e) {
+    selectedLatLng = e.latlng;   // クリック位置の緯度・経度
+    if (tempMarker) map.removeLayer(tempMarker);   // 前の仮ピンを消す
+    tempMarker = L.marker(e.latlng).addTo(map);
+    document.getElementById('status').textContent = '';
+  });
+
+  // --- 4. 写真を縮小して文字列に変換する ---
+  // 写真はそのままだと大きすぎて保存できないので、幅800pxに縮小する。
+  // ファイル読み込みは時間がかかる処理（非同期）なので Promise を使う。
+  // → 「あとで結果を渡すね」という約束、と考えればOK
+  function readAndResize(file) {
+    return new Promise(function (resolve) {
+      const reader = new FileReader();
+      reader.onload = function () {
+        const img = new Image();
+        img.onload = function () {
+          const scale = Math.min(1, 800 / img.width);
+          const canvas = document.createElement('canvas');   // Processing の画面のようなもの
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));      // 画像を文字列に変換
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // --- 5. フォーム送信で記録を保存 ---
+  // async/await：非同期処理の結果を待ってから次に進む書き方
+  document.getElementById('form').addEventListener('submit', async function (e) {
+    e.preventDefault();   // ページがリロードされる標準動作を止める
+
+    if (!selectedLatLng) {
+      document.getElementById('status').textContent = '先に地図をクリックしてください！';
+      return;
+    }
+
+    const file = document.getElementById('photo').files[0];
+    const photo = file ? await readAndResize(file) : null;   // 写真が無ければ null
+
+    // 1件分のデータを「オブジェクト」としてまとめる（Pythonの辞書に近い）
+    const record = {
+      id: Date.now(),   // 現在時刻のミリ秒を、重複しないIDとして使う
+      title: document.getElementById('title').value,
+      date: document.getElementById('date').value,
+      memo: document.getElementById('memo').value,
+      lat: selectedLatLng.lat,
+      lng: selectedLatLng.lng,
+      photo: photo
+    };
+
+    records.push(record);   // 配列に追加
+    save();
+    render();
+
+    // 後片付け：フォームを空にして仮ピンを消す
+    e.target.reset();
+    map.removeLayer(tempMarker);
+    tempMarker = null;
+    selectedLatLng = null;
+  });
+
+  // --- 6. 画面に表示する ---
+  // 「データ(records)を元に、画面を作り直す」関数。
+  // データを変えたら render() を呼ぶ、というルールにすると分かりやすい。
+  function render() {
+    // 古いピンを全部消す
+    markers.forEach(function (m) { map.removeLayer(m); });
+    markers = [];
+
+    const list = document.getElementById('list');
+    list.innerHTML = '';   // 一覧を空にする
+
+    records.forEach(function (r) {
+      // 地図にピンを立て、クリックで出る吹き出し（ポップアップ）を設定
+      const popup = document.createElement('div');
+      popup.innerHTML = '<b></b><br><small></small><p></p>';
+      popup.querySelector('b').textContent = r.title;       // textContent を使うと安全
+      popup.querySelector('small').textContent = r.date;
+      popup.querySelector('p').textContent = r.memo;
+      if (r.photo) {
+        const img = document.createElement('img');
+        img.src = r.photo;
+        img.style.width = '200px';
+        popup.appendChild(img);
+      }
+      const marker = L.marker([r.lat, r.lng]).addTo(map).bindPopup(popup);
+      markers.push(marker);
+
+      // 一覧に1件分のカードを追加
+      const card = document.createElement('div');
+      card.className = 'record';
+      card.innerHTML = '<b></b> <small></small><br><button class="del">削除</button>';
+      card.querySelector('b').textContent = r.title;
+      card.querySelector('small').textContent = r.date;
+      if (r.photo) {
+        const img = document.createElement('img');
+        img.src = r.photo;
+        card.appendChild(img);
+      }
+
+      // カードをクリック → その場所へ地図を移動してポップアップを開く
+      card.addEventListener('click', function () {
+        map.setView([r.lat, r.lng], 13);
+        marker.openPopup();
+      });
+
+      // 削除ボタン：このid以外を残した新しい配列を作る（filter）
+      card.querySelector('.del').addEventListener('click', function (ev) {
+        ev.stopPropagation();   // カード全体のクリック処理が動かないようにする
+        if (confirm('「' + r.title + '」を削除しますか？')) {
+          records = records.filter(function (x) { return x.id !== r.id; });
+          save();
+          render();
+        }
+      });
+
+      list.appendChild(card);
+    });
+  }
+
+  // 起動時に一度表示する（保存済みデータがあればここで復元される）
+  render();
+</script>
+</body>
+</html>
