@@ -44,7 +44,7 @@
     <p style="font-size:13px">① 地図をクリックして場所を選ぶ → ② 入力して保存</p>
 
     <form id="form">
-      <label>タイトル <input id="title" required placeholder="例：清水寺"></label>
+      <label>タイトル <input id="title" required placeholder="例："></label>
       <label>日付 <input id="date" type="date" required></label>
       <label>メモ <textarea id="memo" rows="3"></textarea></label>
       <label>写真 <input id="photo" type="file" accept="image/*"></label>
@@ -63,7 +63,7 @@
 
   // --- 1. 地図を表示する ---
   // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
-  const map = L.map('map').setView([35.68, 139.76], 5);
+  const map = L.map('map').setView([35.68, 139.76], 80);
 
   // 地図画像（タイル）の取得元として OpenStreetMap を指定
   L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
@@ -180,7 +180,7 @@
       if (r.photo) {
         const img = document.createElement('img');
         img.src = r.photo;
-        img.style.width = '200px';
+        img.style.width = '100px';
         popup.appendChild(img);
       }
       const marker = L.marker([r.lat, r.lng]).addTo(map).bindPopup(popup);
