@@ -41,6 +41,8 @@
   <!-- ===== HTML：画面の部品 ===== -->
   <div id="sidebar">
     <h1> 旅行記録</h1>
+    <label>旅行を選ぶ <select id="tripSelect"></select></label>
+    <button type="button" id="addTrip">新しい旅行</button>
     <p style="font-size:13px">① 地図をクリックして場所を選ぶ → ② 入力して保存</p>
 
     <form id="form">
@@ -63,7 +65,7 @@
 
   // --- 1. 地図を表示する ---
   // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
-  const map = L.map('map').setView([35.68, 139.76], 10);
+  const map = L.map('map').setView([35.68, 139.76], 5);
 
   // 地図画像（タイル）の取得元として OpenStreetMap を指定
   L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
@@ -77,6 +79,23 @@
   // 保存データを読み込む。何も無ければ空の配列 []
   // localStorage は文字列しか保存できないので、JSON.parse で配列に戻す
   let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  // --- 旅行の一覧と、今選んでいる旅行 ---
+  const TRIP_KEY = 'travel-log-trips';
+  let tripData = JSON.parse(localStorage.getItem(TRIP_KEY) || 'null');
+  
+  if (!tripData) {   // 初回だけ「最初の旅行」を作る
+    const first = { id: Date.now(), name: '最初の旅行' };
+    tripData = { trips: [first], currentTripId: first.id };
+  }
+  
+  // 旅行が決まっていない今までの記録は「最初の旅行」に入れる
+  records.forEach(function (r) {
+    if (!r.tripId) r.tripId = tripData.trips[0].id;
+  });
+  
+  function saveTrips() {
+    localStorage.setItem(TRIP_KEY, JSON.stringify(tripData));
+  }
 
   let selectedLatLng = null;   // 地図でクリックされた場所
   let tempMarker = null;       // 選択中の仮ピン
@@ -140,6 +159,7 @@
     // 1件分のデータを「オブジェクト」としてまとめる（Pythonの辞書に近い）
     const record = {
       id: Date.now(),   // 現在時刻のミリ秒を、重複しないIDとして使う
+      tripId: tripData.currentTripId,   // 旅行IDを追加
       title: document.getElementById('title').value,
       date: document.getElementById('date').value,
       memo: document.getElementById('memo').value,
@@ -158,6 +178,39 @@
     tempMarker = null;
     selectedLatLng = null;
   });
+  // --- 旅行の切り替え・追加 ---
+  const tripSelect = document.getElementById('tripSelect');
+  
+  // プルダウンの中身を作る
+  function renderTrips() {
+    tripSelect.innerHTML = '';
+    tripData.trips.forEach(function (t) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      opt.selected = (t.id === tripData.currentTripId);
+      tripSelect.appendChild(opt);
+    });
+  }
+
+  // 旅行を切り替えたとき
+  tripSelect.addEventListener('change', function () {
+    tripData.currentTripId = Number(tripSelect.value);   // value は文字列なので数値に直す
+    saveTrips();
+    render();
+  });
+
+  // 新しい旅行を追加
+  document.getElementById('addTrip').addEventListener('click', function () {
+    const name = prompt('旅行の名前（例：2026 京都）');
+    if (!name) return;
+    const trip = { id: Date.now(), name: name };
+    tripData.trips.push(trip);
+    tripData.currentTripId = trip.id;
+    saveTrips();
+    renderTrips();
+    render();
+  });
 
   // --- 6. 画面に表示する ---
   // 「データ(records)を元に、画面を作り直す」関数。
@@ -170,7 +223,9 @@
     const list = document.getElementById('list');
     list.innerHTML = '';   // 一覧を空にする
 
-    records.forEach(function (r) {
+    // 変更後（2行になります）
+    const current = records.filter(function (r) { return r.tripId === tripData.currentTripId; });
+    current.forEach(function (r) {
       // 地図にピンを立て、クリックで出る吹き出し（ポップアップ）を設定
       const popup = document.createElement('div');
       popup.innerHTML = '<b></b><br><small></small><p></p>';
@@ -219,7 +274,9 @@
   }
 
   // 起動時に一度表示する（保存済みデータがあればここで復元される）
+  renderTrips();
   render();
+  save();   // 今までの記録に tripId を付けた状態を保存しておく
 </script>
 </body>
 </html>
