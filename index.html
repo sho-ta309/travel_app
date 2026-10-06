@@ -15,14 +15,14 @@
   body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; }
 
   /* 左：サイドバー（フォームと一覧） */
-  #sidebar { width: 320px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
+  #sidebar { width: 200px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
   /* 右：地図（残りの幅をすべて使う） */
   #map { flex: 1; }
 
   h1 { font-size: 20px; margin: 0 0 8px; }
   label { display: block; margin-top: 8px; font-size: 13px; }
   input, textarea, button { width: 100%; padding: 6px; margin-top: 2px; font-size: 14px; }
-  button { background: #2ae14c; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+  button { background: #57b0ff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
   #status { font-size: 13px; color: #c0392b; margin-top: 6px; }
 
   .record { background: white; border-radius: 6px; padding: 8px; margin-top: 8px; cursor: pointer; }
@@ -32,7 +32,7 @@
   /* スマホなど狭い画面では縦並びにする */
   @media (max-width: 700px) {
     body { flex-direction: column-reverse; }
-    #sidebar { width: 100%; height: 50%; }
+    #sidebar { width: 70%; height: 30%; }
   }
 </style>
 </head>
@@ -63,7 +63,7 @@
 
   // --- 1. 地図を表示する ---
   // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
-  const map = L.map('map').setView([35.68, 139.76], 80);
+  const map = L.map('map').setView([35.68, 139.76], 40);
 
   // 地図画像（タイル）の取得元として OpenStreetMap を指定
   L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
