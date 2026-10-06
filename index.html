@@ -67,7 +67,7 @@
   // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
   const map = L.map('map').setView([35.68, 139.76], 5);
 
-  // 地図画像（タイル）の取得元として OpenStreetMap を指定
+  // 地図画像（タイル）の取得元として 国土地理院 を指定
   L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
     attribution: '&copy; 国土地理院',
     maxZoom: 18
@@ -88,9 +88,10 @@
     tripData = { trips: [first], currentTripId: first.id };
   }
   
-  // 旅行が決まっていない今までの記録は「最初の旅行」に入れる
+  // 変更後：旅行が存在しない記録（IDが無い・IDが古い）をまとめて最初の旅行へ入れる
   records.forEach(function (r) {
-    if (!r.tripId) r.tripId = tripData.trips[0].id;
+    const exists = tripData.trips.some(function (t) { return t.id === r.tripId; });
+    if (!exists) r.tripId = tripData.trips[0].id;
   });
   
   function saveTrips() {
@@ -277,6 +278,7 @@
   renderTrips();
   render();
   save();   // 今までの記録に tripId を付けた状態を保存しておく
+  saveTrips();
 </script>
 </body>
 </html>
