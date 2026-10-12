@@ -46,7 +46,7 @@
     <p style="font-size:13px">① 地図をクリックして場所を選ぶ → ② 入力して保存</p>
 
     <form id="form">
-      <label>タイトル <input id="title" required placeholder="例："></label>
+      <label>タイトル <input id="title" required placeholder="例：釧路駅"></label>
       <label>日付 <input id="date" type="date" required></label>
       <label>メモ <textarea id="memo" rows="3"></textarea></label>
       <label>写真 <input id="photo" type="file" accept="image/*"></label>
@@ -224,7 +224,6 @@
     const list = document.getElementById('list');
     list.innerHTML = '';   // 一覧を空にする
 
-    // 変更後（2行になります）
     const current = records.filter(function (r) { return r.tripId === tripData.currentTripId; });
     current.forEach(function (r) {
       // 地図にピンを立て、クリックで出る吹き出し（ポップアップ）を設定
