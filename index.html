@@ -3,140 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>旅行記録アプリ</title>
-
-<!-- 地図ライブラリ Leaflet（CDNから読み込むのでインストール不要。ネット接続が必要です） -->
+<title>旅行記録アプリ（React版）</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-
+<!-- React 18 と、JSXをブラウザで変換する Babel -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.0/babel.min.js"></script>
 <style>
-  /* ===== CSS：見た目の設定 ===== */
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; }
-
-  /* 左：サイドバー（フォームと一覧） */
-  #sidebar { width: 200px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
-  /* 右：地図（残りの幅をすべて使う） */
-  #map { flex: 1; }
-
+  body { margin: 0; font-family: sans-serif; }
+  #root { display: flex; height: 100vh; }
+  .sidebar { width: 240px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
+  .map { flex: 1; }
   h1 { font-size: 20px; margin: 0 0 8px; }
+  h2 { font-size: 15px; margin: 14px 0 4px; }
   label { display: block; margin-top: 8px; font-size: 13px; }
-  input, textarea, button { width: 100%; padding: 6px; margin-top: 2px; font-size: 14px; }
-  button { background: #57b0ff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
-  #status { font-size: 13px; color: #c0392b; margin-top: 6px; }
-
+  input, textarea, select, button { width: 100%; padding: 6px; margin-top: 2px; font-size: 14px; }
+  button { background: #57b0ff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; }
+  .msg { font-size: 13px; color: #c0392b; margin-top: 6px; }
   .record { background: white; border-radius: 6px; padding: 8px; margin-top: 8px; cursor: pointer; }
   .record img { width: 100%; border-radius: 4px; margin-top: 4px; }
   .record .del { background: #c0392b; width: auto; padding: 2px 8px; font-size: 12px; }
-
-  /* スマホなど狭い画面では縦並びにする */
+  .leaflet-popup-content { font-size: 12px; margin: 8px 10px; }
+  .leaflet-popup-content p { margin: 4px 0; }
   @media (max-width: 700px) {
-    body { flex-direction: column-reverse; }
-    #sidebar { width: 100%; height: 40%; }
+    #root { flex-direction: column-reverse; }
+    .sidebar { width: 100%; height: 45%; }
   }
 </style>
 </head>
-
 <body>
-  <!-- ===== HTML：画面の部品 ===== -->
-  <div id="sidebar">
-    <h1> 旅行記録</h1>
-    <label>旅行を選ぶ <select id="tripSelect"></select></label>
-    <button type="button" id="addTrip">新しい旅行</button>
-    <p style="font-size:13px">① 地図をクリックして場所を選ぶ → ② 入力して保存</p>
+<div id="root"></div>
 
-    <form id="form">
-      <label>タイトル <input id="title" required placeholder="例：釧路駅"></label>
-      <label>日付 <input id="date" type="date" required></label>
-      <label>メモ <textarea id="memo" rows="3"></textarea></label>
-      <label>写真 <input id="photo" type="file" accept="image/*"></label>
-      <button type="submit">この場所を記録する</button>
-      <div id="status">地図をクリックして場所を選んでください</div>
-    </form>
+<script type="text/babel">
+  // useState などは「フック」と呼ばれる、Reactの基本の道具
+  const { useState, useEffect, useRef, useMemo } = React;
 
-    <h2 style="font-size:16px">記録一覧</h2>
-    <div id="list"></div>
-  </div>
-
-  <div id="map"></div>
-
-<script>
-  // ===== JavaScript：動きの部分 =====
-
-  // --- 1. 地図を表示する ---
-  // setView([緯度, 経度], ズーム倍率)。最初は東京を表示
-  const map = L.map('map').setView([35.68, 139.76], 5);
-
-  // 地図画像（タイル）の取得元として 国土地理院 を指定
-  L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-    attribution: '&copy; 国土地理院',
-    maxZoom: 18
-  }).addTo(map);
-
-  // --- 2. データの準備 ---
+  // 保存キーは今までと同じ → 以前の記録がそのまま引き継がれる
   const STORAGE_KEY = 'travel-log-records';
-
-  // 保存データを読み込む。何も無ければ空の配列 []
-  // localStorage は文字列しか保存できないので、JSON.parse で配列に戻す
-  let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  // --- 旅行の一覧と、今選んでいる旅行 ---
   const TRIP_KEY = 'travel-log-trips';
-  let tripData = JSON.parse(localStorage.getItem(TRIP_KEY) || 'null');
-  
-  if (!tripData) {   // 初回だけ「最初の旅行」を作る
+
+  function loadTrips() {
+    const saved = JSON.parse(localStorage.getItem(TRIP_KEY) || 'null');
+    if (saved) return saved;
     const first = { id: Date.now(), name: '最初の旅行' };
-    tripData = { trips: [first], currentTripId: first.id };
+    return { trips: [first], currentTripId: first.id };
   }
-  
-  // 変更後：旅行が存在しない記録（IDが無い・IDが古い）をまとめて最初の旅行へ入れる
-  records.forEach(function (r) {
-    const exists = tripData.trips.some(function (t) { return t.id === r.tripId; });
-    if (!exists) r.tripId = tripData.trips[0].id;
-  });
-  
-  function saveTrips() {
-    localStorage.setItem(TRIP_KEY, JSON.stringify(tripData));
+  function loadRecords(trips) {
+    const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    // 存在しない旅行を指している記録は、最初の旅行に入れる
+    return list.map(r => trips.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips[0].id });
   }
 
-  let selectedLatLng = null;   // 地図でクリックされた場所
-  let tempMarker = null;       // 選択中の仮ピン
-  let markers = [];            // 表示中のピン（描き直すときに消すため保持）
-
-  // 保存する関数：配列 → JSON文字列 → localStorage
-  function save() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-    } catch (e) {
-      // 写真が多すぎて容量オーバーした場合
-      alert('保存できませんでした（容量オーバーかもしれません）');
-    }
-  }
-
-  // --- 3. 地図クリックで場所を選ぶ ---
-  // map.on('click', 関数)：「クリックされたらこの関数を実行して」という登録（イベント）
-  map.on('click', function (e) {
-    selectedLatLng = e.latlng;   // クリック位置の緯度・経度
-    if (tempMarker) map.removeLayer(tempMarker);   // 前の仮ピンを消す
-    tempMarker = L.marker(e.latlng).addTo(map);
-    document.getElementById('status').textContent = '';
-  });
-
-  // --- 4. 写真を縮小して文字列に変換する ---
-  // 写真はそのままだと大きすぎて保存できないので、幅800pxに縮小する。
-  // ファイル読み込みは時間がかかる処理（非同期）なので Promise を使う。
-  // → 「あとで結果を渡すね」という約束、と考えればOK
+  // 写真を縮小して文字列にする（今までと同じ）
   function readAndResize(file) {
-    return new Promise(function (resolve) {
+    return new Promise(resolve => {
       const reader = new FileReader();
-      reader.onload = function () {
+      reader.onload = () => {
         const img = new Image();
-        img.onload = function () {
+        img.onload = () => {
           const scale = Math.min(1, 800 / img.width);
-          const canvas = document.createElement('canvas');   // Processing の画面のようなもの
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/jpeg', 0.7));      // 画像を文字列に変換
+          const c = document.createElement('canvas');
+          c.width = img.width * scale; c.height = img.height * scale;
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.7));
         };
         img.src = reader.result;
       };
@@ -144,140 +75,191 @@
     });
   }
 
-  // --- 5. フォーム送信で記録を保存 ---
-  // async/await：非同期処理の結果を待ってから次に進む書き方
-  document.getElementById('form').addEventListener('submit', async function (e) {
-    e.preventDefault();   // ページがリロードされる標準動作を止める
+  // 地図のポップアップの中身を作る
+  function makePopup(r) {
+    const div = document.createElement('div');
+    div.innerHTML = '<b></b><br><small></small><p></p>';
+    div.querySelector('b').textContent = r.title;
+    div.querySelector('small').textContent = r.date;
+    div.querySelector('p').textContent = r.memo;
+    if (r.photo) {
+      const img = document.createElement('img');
+      img.src = r.photo; img.style.width = '120px';
+      div.appendChild(img);
+    }
+    return div;
+  }
 
-    if (!selectedLatLng) {
-      document.getElementById('status').textContent = '先に地図をクリックしてください！';
-      return;
+  // ===== 部品1：地図 =====
+  // Leaflet はReactの外のライブラリ。そこで useRef で地図を持っておき、
+  // useEffect の中で「状態が変わったら地図を更新する」処理を書く。
+  function MapView({ records, tripId, selected, onSelect, focus }) {
+    const divRef = useRef(null);       // 地図を入れる <div>
+    const mapRef = useRef(null);       // 地図そのもの
+    const groupRef = useRef(null);     // ピンをまとめるグループ
+    const markersRef = useRef({});     // 記録id → ピン
+    const tempRef = useRef(null);      // 選択中の仮ピン
+
+    // 最初の1回だけ：地図を作る（[] は「最初の1回だけ」の意味）
+    useEffect(() => {
+      const map = L.map(divRef.current).setView([36, 138], 5);
+      const std = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { attribution: '&copy; 国土地理院' });
+      const photo = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: '&copy; 国土地理院', maxZoom: 18 });
+      const world = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri', maxZoom: 18 });
+      std.addTo(map);
+      L.control.layers({ '地図': std, '航空写真（日本）': photo, '衛星写真（世界）': world }).addTo(map);
+      groupRef.current = L.layerGroup().addTo(map);
+      map.on('click', e => onSelect(e.latlng));
+      mapRef.current = map;
+      return () => map.remove();
+    }, []);
+
+    // records が変わったら：ピンを作り直す
+    useEffect(() => {
+      groupRef.current.clearLayers();
+      markersRef.current = {};
+      records.forEach(r => {
+        const m = L.marker([r.lat, r.lng]).bindPopup(makePopup(r), { maxWidth: 150 });
+        groupRef.current.addLayer(m);
+        markersRef.current[r.id] = m;
+      });
+    }, [records]);
+
+    // 旅行が切り替わったら：その旅行の記録が全部見える位置へ移動
+    useEffect(() => {
+      if (records.length) {
+        mapRef.current.fitBounds(records.map(r => [r.lat, r.lng]), { maxZoom: 13, padding: [40, 40] });
+      }
+    }, [tripId]);
+
+    // selected が変わったら：仮ピンを付け替える
+    useEffect(() => {
+      if (tempRef.current) { mapRef.current.removeLayer(tempRef.current); tempRef.current = null; }
+      if (selected) tempRef.current = L.marker(selected).addTo(mapRef.current);
+    }, [selected]);
+
+    // 一覧のカードが押されたら：その場所へ移動してポップアップを開く
+    useEffect(() => {
+      if (!focus) return;
+      const m = markersRef.current[focus.id];
+      if (m) { mapRef.current.setView(m.getLatLng(), 13); m.openPopup(); }
+    }, [focus]);
+
+    return <div className="map" ref={divRef}></div>;
+  }
+
+  // ===== 部品2：入力フォーム =====
+  // 入力中の文字は、この部品の中だけの状態（useState）で持つ
+  function RecordForm({ selected, onAdd }) {
+    const [title, setTitle] = useState('');
+    const [date, setDate] = useState('');
+    const [memo, setMemo] = useState('');
+    const [msg, setMsg] = useState('地図をクリックして場所を選んでください');
+    const fileRef = useRef(null);
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      if (!selected) { setMsg('先に地図をクリックしてください！'); return; }
+      const file = fileRef.current.files[0];
+      const photo = file ? await readAndResize(file) : null;
+      // 親（App）から受け取った onAdd を呼んで、記録を渡す
+      onAdd({ id: Date.now(), title, date, memo, lat: selected.lat, lng: selected.lng, photo });
+      setTitle(''); setDate(''); setMemo('');
+      fileRef.current.value = '';
+      setMsg('');
     }
 
-    const file = document.getElementById('photo').files[0];
-    const photo = file ? await readAndResize(file) : null;   // 写真が無ければ null
-
-    // 1件分のデータを「オブジェクト」としてまとめる（Pythonの辞書に近い）
-    const record = {
-      id: Date.now(),   // 現在時刻のミリ秒を、重複しないIDとして使う
-      tripId: tripData.currentTripId,   // 旅行IDを追加
-      title: document.getElementById('title').value,
-      date: document.getElementById('date').value,
-      memo: document.getElementById('memo').value,
-      lat: selectedLatLng.lat,
-      lng: selectedLatLng.lng,
-      photo: photo
-    };
-
-    records.push(record);   // 配列に追加
-    save();
-    render();
-
-    // 後片付け：フォームを空にして仮ピンを消す
-    e.target.reset();
-    map.removeLayer(tempMarker);
-    tempMarker = null;
-    selectedLatLng = null;
-  });
-  // --- 旅行の切り替え・追加 ---
-  const tripSelect = document.getElementById('tripSelect');
-  
-  // プルダウンの中身を作る
-  function renderTrips() {
-    tripSelect.innerHTML = '';
-    tripData.trips.forEach(function (t) {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.name;
-      opt.selected = (t.id === tripData.currentTripId);
-      tripSelect.appendChild(opt);
-    });
+    return (
+      <form onSubmit={handleSubmit}>
+        <label>タイトル <input value={title} onChange={e => setTitle(e.target.value)} required /></label>
+        <label>日付 <input type="date" value={date} onChange={e => setDate(e.target.value)} required /></label>
+        <label>メモ <textarea rows="2" value={memo} onChange={e => setMemo(e.target.value)} /></label>
+        <label>写真 <input type="file" accept="image/*" ref={fileRef} /></label>
+        <button type="submit">この場所を記録する</button>
+        <div className="msg">{msg}</div>
+      </form>
+    );
   }
 
-  // 旅行を切り替えたとき
-  tripSelect.addEventListener('change', function () {
-    tripData.currentTripId = Number(tripSelect.value);   // value は文字列なので数値に直す
-    saveTrips();
-    render();
-  });
-
-  // 新しい旅行を追加
-  document.getElementById('addTrip').addEventListener('click', function () {
-    const name = prompt('旅行の名前（例：2026 京都）');
-    if (!name) return;
-    const trip = { id: Date.now(), name: name };
-    tripData.trips.push(trip);
-    tripData.currentTripId = trip.id;
-    saveTrips();
-    renderTrips();
-    render();
-  });
-
-  // --- 6. 画面に表示する ---
-  // 「データ(records)を元に、画面を作り直す」関数。
-  // データを変えたら render() を呼ぶ、というルールにすると分かりやすい。
-  function render() {
-    // 古いピンを全部消す
-    markers.forEach(function (m) { map.removeLayer(m); });
-    markers = [];
-
-    const list = document.getElementById('list');
-    list.innerHTML = '';   // 一覧を空にする
-
-    const current = records.filter(function (r) { return r.tripId === tripData.currentTripId; });
-    current.forEach(function (r) {
-      // 地図にピンを立て、クリックで出る吹き出し（ポップアップ）を設定
-      const popup = document.createElement('div');
-      popup.innerHTML = '<b></b><br><small></small><p></p>';
-      popup.querySelector('b').textContent = r.title;       // textContent を使うと安全
-      popup.querySelector('small').textContent = r.date;
-      popup.querySelector('p').textContent = r.memo;
-      if (r.photo) {
-        const img = document.createElement('img');
-        img.src = r.photo;
-        img.style.width = '100px';
-        popup.appendChild(img);
-      }
-      const marker = L.marker([r.lat, r.lng]).addTo(map).bindPopup(popup, {maxWidth: 150});
-      markers.push(marker);
-
-      // 一覧に1件分のカードを追加
-      const card = document.createElement('div');
-      card.className = 'record';
-      card.innerHTML = '<b></b> <small></small><br><button class="del">削除</button>';
-      card.querySelector('b').textContent = r.title;
-      card.querySelector('small').textContent = r.date;
-      if (r.photo) {
-        const img = document.createElement('img');
-        img.src = r.photo;
-        card.appendChild(img);
-      }
-
-      // カードをクリック → その場所へ地図を移動してポップアップを開く
-      card.addEventListener('click', function () {
-        map.setView([r.lat, r.lng], 13);
-        marker.openPopup();
-      });
-
-      // 削除ボタン：このid以外を残した新しい配列を作る（filter）
-      card.querySelector('.del').addEventListener('click', function (ev) {
-        ev.stopPropagation();   // カード全体のクリック処理が動かないようにする
-        if (confirm('「' + r.title + '」を削除しますか？')) {
-          records = records.filter(function (x) { return x.id !== r.id; });
-          save();
-          render();
-        }
-      });
-
-      list.appendChild(card);
-    });
+  // ===== 部品3：記録1件のカード =====
+  function RecordCard({ record, onFocus, onDelete }) {
+    return (
+      <div className="record" onClick={() => onFocus(record.id)}>
+        <b>{record.title}</b> <small>{record.date}</small><br />
+        <button className="del" onClick={e => {
+          e.stopPropagation();   // カード全体のクリックを動かさない
+          if (confirm('「' + record.title + '」を削除しますか？')) onDelete(record.id);
+        }}>削除</button>
+        {record.photo && <img src={record.photo} />}
+      </div>
+    );
   }
 
-  // 起動時に一度表示する（保存済みデータがあればここで復元される）
-  renderTrips();
-  render();
-  save();   // 今までの記録に tripId を付けた状態を保存しておく
-  saveTrips();
+  // ===== 親の部品：アプリ全体 =====
+  // データ（状態）はここで持ち、子の部品には props（引数のようなもの）で渡す
+  function App() {
+    const [tripData, setTripData] = useState(loadTrips);
+    const [records, setRecords] = useState(() => loadRecords(tripData.trips));
+    const [selected, setSelected] = useState(null);   // 地図でクリックした場所
+    const [focus, setFocus] = useState(null);
+
+    // 状態が変わったら、自動で保存（save() を手動で呼ぶ必要がなくなる）
+    useEffect(() => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
+      catch (e) { alert('保存できませんでした（容量オーバーかもしれません）'); }
+    }, [records]);
+    useEffect(() => {
+      localStorage.setItem(TRIP_KEY, JSON.stringify(tripData));
+    }, [tripData]);
+
+    // 今の旅行の記録だけ（records か旅行が変わったときだけ計算し直す）
+    const currentId = tripData.currentTripId;
+    const current = useMemo(() => records.filter(r => r.tripId === currentId), [records, currentId]);
+
+    function addRecord(r) {
+      setRecords([...records, { ...r, tripId: currentId }]);
+      setSelected(null);
+    }
+    function deleteRecord(id) {
+      setRecords(records.filter(r => r.id !== id));
+    }
+    function addTrip() {
+      const name = prompt('旅行の名前（例：2026 京都）');
+      if (!name) return;
+      const trip = { id: Date.now(), name };
+      setTripData({ trips: [...tripData.trips, trip], currentTripId: trip.id });
+    }
+
+    // 画面（JSX）：状態から画面を作る。render() を呼ぶ必要はない
+    return (
+      <>
+        <div className="sidebar">
+          <h1>🧳 旅行記録</h1>
+          <label>旅行を選ぶ
+            <select value={currentId}
+                    onChange={e => setTripData({ ...tripData, currentTripId: Number(e.target.value) })}>
+              {tripData.trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          <button onClick={addTrip}>＋ 新しい旅行</button>
+
+          <h2>記録を追加</h2>
+          <RecordForm selected={selected} onAdd={addRecord} />
+
+          <h2>記録一覧（{current.length}件）</h2>
+          {current.map(r => (
+            <RecordCard key={r.id} record={r}
+                        onFocus={id => setFocus({ id })}
+                        onDelete={deleteRecord} />
+          ))}
+        </div>
+        <MapView records={current} tripId={currentId} selected={selected}
+                 onSelect={setSelected} focus={focus} />
+      </>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
