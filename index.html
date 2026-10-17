@@ -177,6 +177,7 @@
         '航空写真（日本）': photo,
         '衛星写真（世界）': world
       }).addTo(map);
+      groupRef.current = L.layerGroup().addTo(map);
       map.on('click', e => onSelect(e.latlng));
       mapRef.current = map;
       return () => map.remove();
