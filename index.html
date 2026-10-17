@@ -211,11 +211,23 @@
       }
     }, [selected]);
 
-    // 一覧のカードが押されたら：その場所へ移動してポップアップを開く
+        // 一覧のカードが押されたら：滑らかに移動して、着いたらポップアップを開く
     useEffect(() => {
       if (!focus) return;
       const m = markersRef.current[focus.id];
-      if (m) { mapRef.current.setView(m.getLatLng(), 13); m.openPopup(); }
+      if (!m) return;
+
+      const map = mapRef.current;
+      const target = m.getLatLng();
+      const zoom = Math.max(map.getZoom(), 13);   // すでに拡大していれば、その倍率を保つ
+
+      // すでにその場所にいる場合は、移動せずに、ポップアップだけ開く
+      const alreadyThere = map.getCenter().distanceTo(target) < 5 && map.getZoom() === zoom;
+      if (alreadyThere) { m.openPopup(); return; }
+
+      // 移動が終わったとき（moveend）に、1回だけポップアップを開く
+      map.once('moveend', () => m.openPopup());
+      map.flyTo(target, zoom, { duration: 1.5 });   // duration：移動にかける秒数
     }, [focus]);
 
     // 検索結果を選んだとき：その場所へ地図を動かして、仮ピンを立てる
