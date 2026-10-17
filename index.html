@@ -204,7 +204,11 @@
     // selected が変わったら：仮ピンを付け替える
     useEffect(() => {
       if (tempRef.current) { mapRef.current.removeLayer(tempRef.current); tempRef.current = null; }
-      if (selected) tempRef.current = L.marker(selected).addTo(mapRef.current);
+      if (selected) {
+        tempRef.current = L.marker(selected).addTo(mapRef.current)
+        .bindTooltip('クリックで取り消し')     // ピンの上にマウスを置くと表示
+        .on('click', () => onSelect(null));     // クリックしたら、選択を取り消す
+      }
     }, [selected]);
 
     // 一覧のカードが押されたら：その場所へ移動してポップアップを開く
