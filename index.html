@@ -5,53 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>旅行記録アプリ</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <!-- React 18 と、JSXをブラウザで変換する Babel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.0/babel.min.js"></script>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: sans-serif; }
-  #root { display: flex; height: 100vh; }
-  .sidebar { width: 240px; padding: 12px; overflow-y: auto; background: #f7f7f7; }
-  .mapWrap { flex: 1; position: relative; min-height: 0; }
-  .mapWrap > .map { position: absolute; inset: 0; }
-
-  /* 検索バー：地図の上部中央に重ねる */
-  .searchBar {
-    position: absolute; top: 10px; left: 60px; right: 60px;
-    max-width: 420px; margin: 0 auto;
-    z-index: 1100;
-  }
-  .searchForm { display: flex; gap: 6px; }
-  .searchBar input {
-    flex: 1; width: auto; margin: 0; padding: 8px 10px;
-    border: none; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.3);
-  }
-  .searchBar button { width: auto; margin: 0; padding: 8px 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.3); }
-  .results { max-height: 40vh; overflow-y: auto; }
-  .result {
-    background: white; border-radius: 6px; padding: 6px 8px; margin-top: 4px;
-    font-size: 12px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-  }
-  .result:hover { background: #e8f3ff; }
-    h1 { font-size: 20px; margin: 0 0 8px; }
-    h2 { font-size: 15px; margin: 14px 0 4px; }
-    label { display: block; margin-top: 8px; font-size: 13px; }
-    input, textarea, select, button { width: 100%; padding: 6px; margin-top: 2px; font-size: 14px; }
-    button { background: #57b0ff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; }
-    .msg { font-size: 13px; color: #c0392b; margin-top: 6px; }
-    .record { background: white; border-radius: 6px; padding: 8px; margin-top: 8px; cursor: pointer; }
-    .record img { width: 100%; border-radius: 4px; margin-top: 4px; }
-    .record .del { background: #c0392b; width: auto; padding: 2px 8px; font-size: 12px; }
-    .leaflet-popup-content { font-size: 12px; margin: 8px 10px; }
-    .leaflet-popup-content p { margin: 4px 0; }
-    @media (max-width: 700px) {
-    #root { flex-direction: column-reverse; }
-    .sidebar { width: 100%; height: 45%; }
-  }
-</style>
 </head>
 <body>
 <div id="root"></div>
