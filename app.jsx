@@ -17,6 +17,26 @@
     return list.map(r => trips.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips[0].id });
   }
 
+  function readAndResize(file, maxW = 800) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxW / img.width);
+          const c = document.createElement('canvas');
+          c.width = img.width * scale; c.height = img.height * scale;
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.7));
+        };
+        img.onerror = () => resolve(null);   // 読み込めない形式のとき
+        img.src = reader.result;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
   // 写真を縮小して文字列にする（今までと同じ）
   function readAndResize(file) {
     return new Promise(resolve => {
@@ -34,6 +54,31 @@
       };
       reader.readAsDataURL(file);
     });
+  }
+
+    // 日付を「2026-10-20」の形にする
+  function toDateStr(d) {
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  // 写真に埋め込まれた位置情報と撮影日を読み取る
+  async function readPhotoInfo(file) {
+    let gps = null, taken = null;
+    try { gps = await exifr.gps(file); } catch (e) {}   // 位置情報（無ければ null）
+    try {
+      const tags = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']);
+      taken = tags && (tags.DateTimeOriginal || tags.CreateDate);
+    } catch (e) {}
+    const hasDate = taken instanceof Date;
+    const d = hasDate ? taken : new Date(file.lastModified);   // 無ければファイルの更新日
+    return {
+      lat: gps ? gps.latitude : null,
+      lng: gps ? gps.longitude : null,
+      date: toDateStr(d),
+      ts: d.getTime(),            // 並べ替え用
+      dateFromExif: hasDate
+    };
   }
 
   // 地図のポップアップの中身を作る
@@ -97,7 +142,7 @@
   // ===== 部品1：地図 =====
   // Leaflet はReactの外のライブラリ。そこで useRef で地図を持っておき、
   // useEffect の中で「状態が変わったら地図を更新する」処理を書く。
-  function MapView({ records, tripId, selected, onSelect, focus }) {
+  function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
     const divRef = useRef(null);       // 地図を入れる <div>
     const mapRef = useRef(null);       // 地図そのもの
     const groupRef = useRef(null);     // ピンをまとめるグループ
@@ -136,9 +181,9 @@
     // 旅行が切り替わったら：その旅行の記録が全部見える位置へ移動
     useEffect(() => {
       if (records.length) {
-        mapRef.current.fitBounds(records.map(r => [r.lat, r.lng]), { maxZoom: 13, padding: [40, 40] });
+        mapRef.current.fitToBounds(records.map(r => [r.lat, r.lng]), { maxZoom: 13, padding: [40, 40] });
       }
-    }, [tripId]);
+    }, [tripId, fitKey]);
 
     // selected が変わったら：仮ピンを付け替える
     useEffect(() => {
@@ -217,6 +262,74 @@
     );
   }
 
+    // ===== 部品：写真のまとめて追加 =====
+  function BulkImport({ onAdd }) {
+    const [items, setItems] = useState([]);   // 読み込んだ写真（確認用の一覧）
+    const [busy, setBusy] = useState(false);
+
+    async function handleFiles(e) {
+      // フォルダを選ぶと、画像以外も入るので、画像だけ残す
+      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      e.target.value = '';   // 同じ写真を、もう一度選べるようにする
+      if (!files.length) return;
+
+      setBusy(true);
+      const list = [];
+      for (const f of files) {
+        const info = await readPhotoInfo(f);
+        const photo = await readAndResize(f, 640);   // まとめて追加は、容量節約のため少し小さく
+        list.push({
+          key: f.name + f.size + f.lastModified,
+          title: f.name.replace(/\.[^.]+$/, ''),     // 拡張子を除いたファイル名
+          photo, ...info
+        });
+      }
+      list.sort((a, b) => a.ts - b.ts);   // 撮影の古い順
+      setItems(list);
+      setBusy(false);
+    }
+
+    // 位置情報があり、写真も読めたものだけを記録できる
+    const ok = items.filter(i => i.lat !== null && i.photo);
+    const ng = items.length - ok.length;
+
+    function importAll() {
+      onAdd(ok.map((i, n) => ({
+        id: Date.now() + n,
+        title: i.title, date: i.date, memo: '',
+        lat: i.lat, lng: i.lng, photo: i.photo
+      })));
+      setItems(items.filter(i => !ok.includes(i)));   // 登録できなかったものだけ残す
+    }
+
+    return (
+      <div>
+        <h2>写真をまとめて追加</h2>
+        <label>写真を選ぶ（複数選択できます）
+          <input type="file" accept="image/*" multiple onChange={handleFiles} />
+        </label>
+        <label>フォルダごと選ぶ（パソコンのみ）
+          <input type="file" webkitdirectory="" multiple onChange={handleFiles} />
+        </label>
+        {busy && <div className="msg">読み込み中...（写真が多いと時間がかかります）</div>}
+
+        {items.map(i => (
+          <div className="record" key={i.key} style={{ cursor: 'default' }}>
+            {i.photo ? <img src={i.photo} /> : <div className="msg">読み込めない形式です</div>}
+            <input value={i.title}
+                   onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
+            <small>{i.date}{i.dateFromExif ? '（撮影日）' : '（ファイルの更新日）'}</small><br />
+            <small>{i.lat !== null ? '📍 位置情報あり' : '⚠ 位置情報なし'}</small>
+          </div>
+        ))}
+
+        {ok.length > 0 && <button onClick={importAll}>位置情報のある{ok.length}件を記録する</button>}
+        {ng > 0 && <div className="msg">位置情報のない（または読めない）{ng}件は、「記録を追加」のフォームで、1件ずつ登録してください</div>}
+        {items.length > 0 && <button style={{ background: '#888' }} onClick={() => setItems([])}>一覧を閉じる</button>}
+      </div>
+    );
+  }
+
   // ===== 部品3：記録1件のカード =====
   function RecordCard({ record, onFocus, onDelete }) {
     return (
@@ -238,6 +351,7 @@
     const [records, setRecords] = useState(() => loadRecords(tripData.trips));
     const [selected, setSelected] = useState(null);   // 地図でクリックした場所
     const [focus, setFocus] = useState(null);
+    const [fitKey, setFitKey] = useState(0);   // 追加したあと、地図を動かすための合図
 
     // 状態が変わったら、自動で保存（save() を手動で呼ぶ必要がなくなる）
     useEffect(() => {
@@ -255,6 +369,11 @@
     function addRecord(r) {
       setRecords([...records, { ...r, tripId: currentId }]);
       setSelected(null);
+    }
+        // 複数の記録を、まとめて追加する
+    function addRecords(list) {
+      setRecords(prev => [...prev, ...list.map(r => ({ ...r, tripId: currentId }))]);
+      setFitKey(k => k + 1);
     }
     function deleteRecord(id) {
       setRecords(records.filter(r => r.id !== id));
@@ -281,6 +400,7 @@
 
           <h2>記録を追加</h2>
           <RecordForm selected={selected} onAdd={addRecord} />
+          <BulkImport onAdd={addRecords} />
 
           <h2>記録一覧（{current.length}件）</h2>
           {current.map(r => (
@@ -289,8 +409,7 @@
                         onDelete={deleteRecord} />
           ))}
         </div>
-        <MapView records={current} tripId={currentId} selected={selected}
-                 onSelect={setSelected} focus={focus} />
+        <MapView records={current} tripId={currentId} fitKey={fitKey} selected={selected} onSelect={setSelected} focus={focus} />
       </>
     );
   }
