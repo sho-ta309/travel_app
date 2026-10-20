@@ -463,4 +463,29 @@
     );
   }
 
+  // ===== エラーが起きたとき、真っ白にせず、内容を表示する =====
+  // （エラーを受け止める部品は、今のところ class で書く決まりです）
+  class ErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { error: null }; }
+    static getDerivedStateFromError(error) { return { error }; }
+    render() {
+      if (this.state.error) {
+        return (
+          <div style={{ padding: 16 }}>
+            <h2>エラーが発生しました</h2>
+            <p style={{ color: '#c0392b', wordBreak: 'break-all' }}>
+              {String(this.state.error.message || this.state.error)}
+            </p>
+            <button onClick={() => location.reload()}>再読み込み</button>
+          </div>
+        );
+      }
+      return this.props.children;
+    }
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <ErrorBoundary><App /></ErrorBoundary>
+  );
+
   ReactDOM.createRoot(document.getElementById('root')).render(<App />);
