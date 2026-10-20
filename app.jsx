@@ -212,19 +212,49 @@
 
   // ===== 部品2：入力フォーム =====
   // 入力中の文字は、この部品の中だけの状態（useState）で持つ
-  function RecordForm({ selected, onAdd }) {
+    function RecordForm({ selected, onAdd, editing, onUpdate, onCancel }) {
     const [title, setTitle] = useState('');
     const [date, setDate] = useState('');
     const [memo, setMemo] = useState('');
+    const [removePhoto, setRemovePhoto] = useState(false);
     const [msg, setMsg] = useState('地図をクリックして場所を選んでください');
     const fileRef = useRef(null);
+    const formRef = useRef(null);
+
+    // 編集の対象が変わったとき：フォームに今の内容を入れる（終わったら空に戻す）
+    useEffect(() => {
+      if (fileRef.current) fileRef.current.value = '';
+      setRemovePhoto(false);
+      if (editing) {
+        setTitle(editing.title);
+        setDate(editing.date);
+        setMemo(editing.memo || '');
+        setMsg('編集中：場所を変えるときは、地図をクリックしてください');
+        // フォームが画面の外にあっても、見える位置までスクロールする
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        setTitle(''); setDate(''); setMemo('');
+        setMsg(m => m.startsWith('編集中') ? '' : m);
+      }
+    }, [editing]);
 
     async function handleSubmit(e) {
       e.preventDefault();
-      if (!selected) { setMsg('先に地図をクリックしてください！'); return; }
       const file = fileRef.current.files[0];
+
+      // ---- 編集モード：既存の記録を更新する ----
+      if (editing) {
+        const changes = { title, date, memo };
+        if (file) changes.photo = await readAndResize(file);   // 新しい写真を選んだときだけ差し替え
+        else if (removePhoto) changes.photo = null;            // 「写真を外す」にチェックしたとき
+        if (selected) { changes.lat = selected.lat; changes.lng = selected.lng; }   // 地図をクリックし直したときだけ場所を変更
+        onUpdate(editing.id, changes);
+        return;
+      }
+
+      // ---- 通常モード：新しい記録を追加する ----
+      if (!selected) { setMsg('先に地図をクリックしてください！'); return; }
       const photo = file ? await readAndResize(file) : null;
-      // 親（App）から受け取った onAdd を呼んで、記録を渡す
       onAdd({ id: Date.now(), title, date, memo, lat: selected.lat, lng: selected.lng, photo });
       setTitle(''); setDate(''); setMemo('');
       fileRef.current.value = '';
@@ -232,12 +262,27 @@
     }
 
     return (
-      <form onSubmit={handleSubmit}>
+      <form ref={formRef} onSubmit={handleSubmit}>
         <label>タイトル <input value={title} onChange={e => setTitle(e.target.value)} required /></label>
         <label>日付 <input type="date" value={date} onChange={e => setDate(e.target.value)} required /></label>
         <label>メモ <textarea rows="2" value={memo} onChange={e => setMemo(e.target.value)} /></label>
-        <label>写真 <input type="file" accept="image/*" ref={fileRef} /></label>
-        <button type="submit">この場所を記録する</button>
+
+        {editing && editing.photo && (
+          <div>
+            <small>今の写真</small>
+            <img src={editing.photo} style={{ width: '100%', borderRadius: 4 }} />
+            <label>
+              <input type="checkbox" checked={removePhoto} style={{ width: 'auto' }}
+                     onChange={e => setRemovePhoto(e.target.checked)} /> 写真を外す
+            </label>
+          </div>
+        )}
+        <label>{editing ? '写真を差し替える（変えないときは空のまま）' : '写真'}
+          <input type="file" accept="image/*" ref={fileRef} />
+        </label>
+
+        <button type="submit">{editing ? '更新する' : 'この場所を記録する'}</button>
+        {editing && <button type="button" style={{ background: '#888' }} onClick={onCancel}>編集をやめる</button>}
         <div className="msg">{msg}</div>
       </form>
     );
@@ -312,10 +357,12 @@
   }
 
   // ===== 部品3：記録1件のカード =====
-  function RecordCard({ record, onFocus, onDelete }) {
+  function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
     return (
-      <div className="record" onClick={() => onFocus(record.id)}>
+      <div className="record" onClick={() => onFocus(record.id)}
+           style={isEditing ? { outline: '2px solid #2a7de1' } : undefined}>
         <b>{record.title}</b> <small>{record.date}</small><br />
+        <button className="edit" onClick={e => { e.stopPropagation(); onEdit(record.id); }}>編集</button>
         <button className="del" onClick={e => {
           e.stopPropagation();   // カード全体のクリックを動かさない
           if (confirm('「' + record.title + '」を削除しますか？')) onDelete(record.id);
@@ -333,6 +380,7 @@
     const [selected, setSelected] = useState(null);   // 地図でクリックした場所
     const [focus, setFocus] = useState(null);
     const [fitKey, setFitKey] = useState(0);   // 追加したあと、地図を動かすための合図
+    const [editingId, setEditingId] = useState(null);   // 編集中の記録のid（なければ null）
 
     // 状態が変わったら、自動で保存（save() を手動で呼ぶ必要がなくなる）
     useEffect(() => {
@@ -346,6 +394,7 @@
     // 今の旅行の記録だけ（records か旅行が変わったときだけ計算し直す）
     const currentId = tripData.currentTripId;
     const current = useMemo(() => records.filter(r => r.tripId === currentId), [records, currentId]);
+    const editing = records.find(r => r.id === editingId) || null;   // find：条件に合う最初の1件
 
     function addRecord(r) {
       setRecords([...records, { ...r, tripId: currentId }]);
@@ -356,8 +405,24 @@
       setRecords(prev => [...prev, ...list.map(r => ({ ...r, tripId: currentId }))]);
       setFitKey(k => k + 1);
     }
+    // 記録を更新する：id が一致する記録だけ、changes の内容で上書きする
+    function updateRecord(id, changes) {
+      setRecords(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r));
+      setEditingId(null);
+      setSelected(null);
+    }
+    function startEdit(id) {
+      setSelected(null);
+      setEditingId(id);
+      setFocus({ id });      // その記録の場所へ、地図が移動する
+    }
+    function cancelEdit() {
+      setEditingId(null);
+      setSelected(null);
+    }
     function deleteRecord(id) {
-      setRecords(records.filter(r => r.id !== id));
+      setRecords(prev => prev.filter(r => r.id !== id));
+      if (editingId === id) setEditingId(null);
     }
     function addTrip() {
       const name = prompt('旅行の名前（例：2026 京都）');
@@ -373,20 +438,23 @@
           <h1>旅行記録</h1>
           <label>旅行を選ぶ
             <select value={currentId}
-                    onChange={e => setTripData({ ...tripData, currentTripId: Number(e.target.value) })}>
+                    onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
               {tripData.trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </label>
           <button onClick={addTrip}>＋ 新しい旅行</button>
 
           <h2>記録を追加</h2>
-          <RecordForm selected={selected} onAdd={addRecord} />
+          <RecordForm selected={selected} onAdd={addRecord}
+                      editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
           <BulkImport onAdd={addRecords} />
 
           <h2>記録一覧（{current.length}件）</h2>
           {current.map(r => (
             <RecordCard key={r.id} record={r}
+                        isEditing={r.id === editingId}
                         onFocus={id => setFocus({ id })}
+                        onEdit={startEdit}
                         onDelete={deleteRecord} />
           ))}
         </div>
