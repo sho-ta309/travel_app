@@ -37,25 +37,6 @@
     });
   }
 
-  // 写真を縮小して文字列にする（今までと同じ）
-  function readAndResize(file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, 800 / img.width);
-          const c = document.createElement('canvas');
-          c.width = img.width * scale; c.height = img.height * scale;
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          resolve(c.toDataURL('image/jpeg', 0.7));
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
     // 日付を「2026-10-20」の形にする
   function toDateStr(d) {
     const p = n => String(n).padStart(2, '0');
@@ -181,7 +162,7 @@
     // 旅行が切り替わったら：その旅行の記録が全部見える位置へ移動
     useEffect(() => {
       if (records.length) {
-        mapRef.current.fitToBounds(records.map(r => [r.lat, r.lng]), { maxZoom: 13, padding: [40, 40] });
+        mapRef.current.fitBounds(records.map(r => [r.lat, r.lng]), { maxZoom: 13, padding: [40, 40] });
       }
     }, [tripId, fitKey]);
 
