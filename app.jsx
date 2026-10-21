@@ -71,8 +71,7 @@
         reason = '読み取りエラー：' + (e.message || e);
       }
     }
-    const good = gps && validLatLng(gps.latitude, gps.longitude);
-    if (gps && !good) reason = '位置情報の値が不正です';
+    if (gps && !good) reason = '位置情報の値が不正です（緯度=' + gps.latitude + '、経度=' + gps.longitude + '）';
 
     const hasDate = taken instanceof Date;
     const d = hasDate ? taken : new Date(file.lastModified);
