@@ -56,10 +56,6 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
-  function validLatLng(lat, lng) {
-    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-  }
-
   async function readPhotoInfo(file) {
     let gps = null, taken = null, reason = '';
     if (typeof exifr === 'undefined') {
@@ -386,6 +382,7 @@
                    onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
             <small>{i.date}{i.dateFromExif ? '（撮影日）' : '（ファイルの更新日）'}</small><br />
             <small>{i.lat !== null ? '📍 位置情報あり' : '⚠ 位置情報なし'}</small>
+            {i.reason && <div className="msg">{i.reason}</div>}
           </div>
         ))}
 
@@ -487,10 +484,7 @@
           <h2>記録を追加</h2>
           <RecordForm selected={selected} onAdd={addRecord}
                       editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
-          <BulkImport onAdd={addRecords} />
-                      <small>{i.lat !== null ? '📍 位置情報あり' : '⚠ 位置情報なし'}</small>
-            {i.reason && <div className="msg">{i.reason}</div>}
-          
+          <BulkImport onAdd={addRecords} />          
 
           <h2>記録一覧（{current.length}件）</h2>
           {current.map(r => (
