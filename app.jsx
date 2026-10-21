@@ -11,29 +11,42 @@
     const first = { id: Date.now(), name: '最初の旅行' };
     return { trips: [first], currentTripId: first.id };
   }
+  // 緯度・経度が、正しい数値かを調べる
+  function validLatLng(lat, lng) {
+    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  }
+
   function loadRecords(trips) {
-    const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    // 存在しない旅行を指している記録は、最初の旅行に入れる
-    return list.map(r => trips.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips[0].id });
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) {}
+    return list
+      .filter(r => validLatLng(r.lat, r.lng))   // 座標が壊れた記録は、除外する
+      .map(r => trips.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips[0].id });
   }
 
   function readAndResize(file, maxW = 800) {
     return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, maxW / img.width);
-          const c = document.createElement('canvas');
-          c.width = img.width * scale; c.height = img.height * scale;
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          resolve(c.toDataURL('image/jpeg', 0.7));
-        };
-        img.onerror = () => resolve(null);   // 読み込めない形式のとき
-        img.src = reader.result;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      const done = value => {
+        img.onload = img.onerror = null;
+        img.src = '';                 // 画像のメモリを手放す
+        URL.revokeObjectURL(url);
+        resolve(value);
       };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
+      img.onload = () => {
+        if (!img.width) { done(null); return; }
+        const scale = Math.min(1, maxW / img.width);
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const data = c.toDataURL('image/jpeg', 0.7);
+        c.width = c.height = 0;       // キャンバスのメモリも解放する
+        done(data);
+      };
+      img.onerror = () => done(null);
+      img.src = url;
     });
   }
 
@@ -53,11 +66,12 @@
     } catch (e) {}
     const hasDate = taken instanceof Date;
     const d = hasDate ? taken : new Date(file.lastModified);   // 無ければファイルの更新日
+    const good = gps && validLatLng(gps.latitude, gps.longitude);
     return {
-      lat: gps ? gps.latitude : null,
-      lng: gps ? gps.longitude : null,
+      lat: good ? gps.latitude : null,
+      lng: good ? gps.longitude : null,
       date: toDateStr(d),
-      ts: d.getTime(),            // 並べ替え用
+      ts: d.getTime(),
       dateFromExif: hasDate
     };
   }
@@ -148,12 +162,13 @@
       return () => map.remove();
     }, []);
 
-    // records が変わったら：ピンを作り直す
     useEffect(() => {
       groupRef.current.clearLayers();
       markersRef.current = {};
       records.forEach(r => {
-        const m = L.marker([r.lat, r.lng]).bindPopup(makePopup(r), { maxWidth: 150 });
+        if (!validLatLng(r.lat, r.lng)) return;   // 壊れた座標は、飛ばす
+        // 関数を渡すと、ポップアップを開いたときに、中身（写真）が作られる
+        const m = L.marker([r.lat, r.lng]).bindPopup(() => makePopup(r), { maxWidth: 150 });
         groupRef.current.addLayer(m);
         markersRef.current[r.id] = m;
       });
@@ -294,29 +309,40 @@
     const [busy, setBusy] = useState(false);
 
     async function handleFiles(e) {
-      // フォルダを選ぶと、画像以外も入るので、画像だけ残す
-      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
-      e.target.value = '';   // 同じ写真を、もう一度選べるようにする
+      let files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      e.target.value = '';
       if (!files.length) return;
 
-      setBusy(true);
-      const list = [];
-      for (const f of files) {
-        const info = await readPhotoInfo(f);
-        const photo = await readAndResize(f, 640);   // まとめて追加は、容量節約のため少し小さく
-        list.push({
-          key: f.name + f.size + f.lastModified,
-          title: f.name.replace(/\.[^.]+$/, ''),     // 拡張子を除いたファイル名
-          photo, ...info
-        });
+      const MAX = 8;   // 一度に読み込む上限（動いたら、少しずつ増やす）
+      if (files.length > MAX) {
+        alert('一度に読み込めるのは' + MAX + '枚までです。最初の' + MAX + '枚を読み込みます');
+        files = files.slice(0, MAX);
       }
-      list.sort((a, b) => a.ts - b.ts);   // 撮影の古い順
-      setItems(list);
-      setBusy(false);
+
+      setBusy(true);
+      try {
+        const list = [];
+        for (const f of files) {
+          const info = await readPhotoInfo(f);
+          const photo = await readAndResize(f, 480);   // スマホでは小さめにして、メモリと容量を節約
+          list.push({
+            key: f.name + f.size + f.lastModified,
+            title: f.name.replace(/\.[^.]+$/, ''),
+            photo, ...info
+          });
+          await new Promise(r => setTimeout(r, 80));   // ブラウザに、メモリを片付ける時間を与える
+        }
+        list.sort((a, b) => a.ts - b.ts);
+        setItems(list);
+      } catch (err) {
+        alert('写真の読み込み中に問題が起きました：' + err.message);
+      } finally {
+        setBusy(false);
+      }
     }
 
     // 位置情報があり、写真も読めたものだけを記録できる
-    const ok = items.filter(i => i.lat !== null && i.photo);
+    const ok = items.filter(i => validLatLng(i.lat, i.lng) && i.photo);
     const ng = items.length - ok.length;
 
     function importAll() {
@@ -435,7 +461,7 @@
     return (
       <>
         <div className="sidebar">
-          <h1>旅行記録</h1>
+          <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v4</small></h1>
           <label>旅行を選ぶ
             <select value={currentId}
                     onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
@@ -487,5 +513,3 @@
   ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary><App /></ErrorBoundary>
   );
-
-  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
