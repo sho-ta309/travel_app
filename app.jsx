@@ -56,23 +56,37 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
-  // 写真に埋め込まれた位置情報と撮影日を読み取る
+  function validLatLng(lat, lng) {
+    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  }
+
   async function readPhotoInfo(file) {
-    let gps = null, taken = null;
-    try { gps = await exifr.gps(file); } catch (e) {}   // 位置情報（無ければ null）
-    try {
-      const tags = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']);
-      taken = tags && (tags.DateTimeOriginal || tags.CreateDate);
-    } catch (e) {}
-    const hasDate = taken instanceof Date;
-    const d = hasDate ? taken : new Date(file.lastModified);   // 無ければファイルの更新日
+    let gps = null, taken = null, reason = '';
+    if (typeof exifr === 'undefined') {
+      reason = 'EXIFを読むライブラリが、読み込めていません';
+    } else {
+      try {
+        gps = await exifr.gps(file);
+        const tags = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']);
+        taken = tags && (tags.DateTimeOriginal || tags.CreateDate);
+        if (!gps) reason = tags ? '撮影情報はあるが、位置情報だけが含まれていません'
+                                : '撮影情報（EXIF）が含まれていません';
+      } catch (e) {
+        reason = '読み取りエラー：' + (e.message || e);
+      }
+    }
     const good = gps && validLatLng(gps.latitude, gps.longitude);
+    if (gps && !good) reason = '位置情報の値が不正です';
+
+    const hasDate = taken instanceof Date;
+    const d = hasDate ? taken : new Date(file.lastModified);
     return {
       lat: good ? gps.latitude : null,
       lng: good ? gps.longitude : null,
       date: toDateStr(d),
       ts: d.getTime(),
-      dateFromExif: hasDate
+      dateFromExif: hasDate,
+      reason: good ? '' : reason + '（形式：' + (file.type || '不明') + '）'
     };
   }
 
@@ -474,6 +488,9 @@
           <RecordForm selected={selected} onAdd={addRecord}
                       editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
           <BulkImport onAdd={addRecords} />
+                      <small>{i.lat !== null ? '📍 位置情報あり' : '⚠ 位置情報なし'}</small>
+            {i.reason && <div className="msg">{i.reason}</div>}
+          
 
           <h2>記録一覧（{current.length}件）</h2>
           {current.map(r => (
