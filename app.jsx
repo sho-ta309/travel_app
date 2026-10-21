@@ -375,6 +375,9 @@
         <label>写真を選ぶ（複数選択できます）
           <input type="file" accept="image/*" multiple onChange={handleFiles} />
         </label>
+          <label>ファイルから選ぶ（Android向け：位置情報が残りやすい方法）
+        <input type="file" multiple onChange={handleFiles} />
+        </label>
         <label>フォルダごと選ぶ（パソコンのみ）
           <input type="file" webkitdirectory="" multiple onChange={handleFiles} />
         </label>
