@@ -57,7 +57,7 @@
   }
 
   async function readPhotoInfo(file) {
-    let gps = null, taken = null, reason = '';
+    let gps = null, taken = null, reason = '', rawGps = '';
 
     if (typeof exifr === 'undefined') {
       reason = 'EXIFを読むライブラリが、読み込めていません';
@@ -66,6 +66,8 @@
         gps = await exifr.gps(file);
         const tags = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']);
         taken = tags && (tags.DateTimeOriginal || tags.CreateDate);
+        const raw = await exifr.parse(file, ['GPSLatitude', 'GPSLatitudeRef', 'GPSLongitude', 'GPSLongitudeRef']);
+        rawGps = JSON.stringify(raw);
         if (!gps) reason = tags ? '撮影情報はあるが、位置情報だけが含まれていません'
                                 : '撮影情報（EXIF）が含まれていません';
       } catch (e) {
@@ -87,7 +89,7 @@
       date: toDateStr(d),
       ts: d.getTime(),
       dateFromExif: hasDate,
-      reason: good ? '' : reason + '（形式：' + (file.type || '不明') + '）'
+      reason: good ? '' : reason + '（形式：' + (file.type || '不明') + '、元の値：' + rawGps + '、' + Math.round(file.size / 1024) + 'KB）'
     };
   }
 
