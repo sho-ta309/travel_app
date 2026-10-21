@@ -58,6 +58,7 @@
 
   async function readPhotoInfo(file) {
     let gps = null, taken = null, reason = '';
+
     if (typeof exifr === 'undefined') {
       reason = 'EXIFを読むライブラリが、読み込めていません';
     } else {
@@ -71,7 +72,12 @@
         reason = '読み取りエラー：' + (e.message || e);
       }
     }
-    if (gps && !good) reason = '位置情報の値が不正です（緯度=' + gps.latitude + '、経度=' + gps.longitude + '）';
+
+    // good は try の外で作る（中で作ると、ここから見えなくなる）
+    const good = !!gps && validLatLng(gps.latitude, gps.longitude);
+    if (gps && !good) {
+      reason = '位置情報の値が不正です（緯度=' + gps.latitude + '、経度=' + gps.longitude + '）';
+    }
 
     const hasDate = taken instanceof Date;
     const d = hasDate ? taken : new Date(file.lastModified);
