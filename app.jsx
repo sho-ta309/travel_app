@@ -493,8 +493,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   if (phase === 'setup') return (
     <div className="screen"><div className="inner">
       <button style={{ ...grayBtn, width: 'auto' }} onClick={onExit}>← タイトルへ</button>
-      <h2>🎯 クイズ</h2>
-      <label>出題する旅行
+      <h2>旅の記憶クイズ</h2>
+      <label>今回出題する旅行
         <select value={tripSel} onChange={e => setTripSel(e.target.value)}>
           <option value="all">すべての旅行</option>
           {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
@@ -533,7 +533,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
         </div>
         {picked && (
           <div className={'fb ' + (picked === correctId ? 'ok' : 'ng')}>
-            <b>{picked === correctId ? '正解！🎉' : '残念…'}</b>
+            <b>{picked === correctId ? '正解！いいですね' : '違います、残念…'}</b>
             <div>{q.record.date} ／ {q.record.title}</div>
             {q.record.memo && <div style={{ fontSize: 13 }}>{q.record.memo}</div>}
             <button onClick={next}>{idx + 1 >= qs.length ? '結果を見る' : '次の問題へ'}</button>
@@ -546,8 +546,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   return (
     <div className="screen"><div className="inner">
       <h2>結果</h2>
-      <p style={{ fontSize: 28 }}>{score} / {qs.length} 問正解</p>
-      <p>{score === qs.length ? '全問正解！完璧な思い出力です 🎉' : score >= qs.length / 2 ? 'いい調子です！' : 'もう一度、思い出してみよう'}</p>
+      <p style={{ fontSize: 28 }}>{score} / {qs.length} 問正解！</p>
+      <p>{score === qs.length ? '全問正解！いい旅行になりましたね！' : score >= qs.length / 2 ? '時には写真を見返そう' : 'その旅行、いった意味ありました...？'}</p>
       <button onClick={start}>もう一度（問題を作り直す）</button>
       <button style={grayBtn} onClick={() => setPhase('setup')}>設定に戻る</button>
       <button style={grayBtn} onClick={onExit}>タイトルへ</button>
