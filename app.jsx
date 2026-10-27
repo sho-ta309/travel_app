@@ -423,14 +423,14 @@ function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
   return (
     <div className="screen"><div className="inner">
-      <h1 style={{ fontSize: 28 }}>🧳 旅行記録</h1>
-      <p>旅の思い出を、残して、思い出そう。<br />
+      <h1 style={{ fontSize: 28 }}>自分だけの旅行地図記録</h1>
+      <p>旅の思い出を残して、思い出そう。<br />
         <small>旅行 {trips.length}件 ／ 記録 {records.length}件 ／ 写真 {photoCount}枚</small></p>
       <button className="homeBtn" onClick={() => onGo('register')}>
-        📍 記録する<small>地図と写真で、旅の記録を登録・編集</small>
+        旅行を記録する<small>地図と写真で、旅の記録を登録・編集</small>
       </button>
       <button className="homeBtn quiz" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
-        🎯 クイズに挑戦
+        旅行の記録クイズに挑戦！
         <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
       </button>
     </div></div>
