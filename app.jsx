@@ -36,6 +36,7 @@ const Sound = (() => {
   const SOUNDS = {
     click:   c => tone(c, 880, 0, 0.06, 'sine', 0.12),
     pin:     c => tone(c, 660, 0, 0.09, 'triangle', 0.15),
+    select:  c => { tone(c, 740, 0, 0.07, 'triangle', 0.15); tone(c, 988, 0.06, 0.1, 'triangle', 0.15); },
     save:    c => { tone(c, 660, 0, 0.1, 'sine', 0.15); tone(c, 880, 0.09, 0.16, 'sine', 0.15); },
     delete:  c => tone(c, 300, 0, 0.14, 'triangle', 0.15),
     correct: c => [523, 659, 784].forEach((f, i) => tone(c, f, i * 0.1, 0.22, 'sine', 0.18)),
@@ -228,6 +229,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
     records.forEach(r => {
       if (!validLatLng(r.lat, r.lng)) return;
       const m = L.marker([r.lat, r.lng]).bindPopup(() => makePopup(r), { maxWidth: 150 });
+      m.on('click', () => Sound.play('select'));   // ピンを押したときの音
       groupRef.current.addLayer(m);
       markersRef.current[r.id] = m;
     });
@@ -245,7 +247,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
     if (tempRef.current) { mapRef.current.removeLayer(tempRef.current); tempRef.current = null; }
     if (selected) {
       tempRef.current = L.marker(selected).addTo(mapRef.current)
-        .bindTooltip('クリックで取り消し').on('click', () => onSelect(null));
+        .bindTooltip('クリックで取り消し').on('click', () => { Sound.play('delete'); onSelect(null); });
     }
   }, [selected]);
 
@@ -890,7 +892,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 style={{ background: '#888', marginTop: 0 }}>← タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v14</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v15</small></h1>
         <label>旅行を選ぶ
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
