@@ -4,6 +4,60 @@ const { useState, useEffect, useRef, useMemo } = React;
 const STORAGE_KEY = 'travel-log-records';
 const TRIP_KEY = 'travel-log-trips';
 
+// ---------- 効果音（音声ファイルは使わず、ブラウザで音を作ります） ----------
+const Sound = (() => {
+  const KEY = 'travel-log-sound';
+  let ctx = null;
+  let enabled = true;
+  try { enabled = localStorage.getItem(KEY) !== 'off'; } catch (e) {}
+
+  function getCtx() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume();   // スマホでは、最初の操作のあとに音が出せるようになる
+    return ctx;
+  }
+  // 1つの音：周波数(Hz)、開始までの秒数、長さ(秒)、波形、音量(0〜1)
+  function tone(c, freq, at, dur, type, vol) {
+    const t0 = c.currentTime + at;
+    const osc = c.createOscillator(), gain = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);   // なめらかに消す（プチッという雑音を防ぐ）
+    osc.connect(gain); gain.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.05);
+  }
+  // 音の一覧：好みに合わせて、数字を変えられます
+  const SOUNDS = {
+    click:   c => tone(c, 880, 0, 0.06, 'sine', 0.12),
+    pin:     c => tone(c, 660, 0, 0.09, 'triangle', 0.15),
+    save:    c => { tone(c, 660, 0, 0.1, 'sine', 0.15); tone(c, 880, 0.09, 0.16, 'sine', 0.15); },
+    delete:  c => tone(c, 300, 0, 0.14, 'triangle', 0.15),
+    correct: c => [523, 659, 784].forEach((f, i) => tone(c, f, i * 0.1, 0.22, 'sine', 0.18)),
+    wrong:   c => { tone(c, 220, 0, 0.18, 'sawtooth', 0.1); tone(c, 165, 0.17, 0.3, 'sawtooth', 0.1); },
+    finish:  c => [523, 659, 784, 1047].forEach((f, i) => tone(c, f, 0.12 + i * 0.12, 0.3, 'triangle', 0.16))
+  };
+  return {
+    get enabled() { return enabled; },
+    setEnabled(v) { enabled = v; try { localStorage.setItem(KEY, v ? 'on' : 'off'); } catch (e) {} },
+    play(name) {
+      if (!enabled) return;
+      try { const c = getCtx(); if (c && SOUNDS[name]) SOUNDS[name](c); } catch (e) {}   // 音が出せなくても、アプリは止めない
+    }
+  };
+})();
+
+// ボタンを押したときの音（ボタンに data-silent を付けると、この音は鳴らさない）
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('button');
+  if (b && !b.disabled && !b.closest('[data-silent]')) Sound.play('click');
+});
+
 // ---------- 共通の道具 ----------
 // 緯度・経度が正しい数値か（0,0 は「位置情報が空」のときの値なので除外）
 function validLatLng(lat, lng) {
@@ -162,7 +216,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
     osm.addTo(map);
     L.control.layers({ 'OpenStreetMap': osm, '航空写真（日本）': photo, '衛星写真（世界）': world }).addTo(map);
     groupRef.current = L.layerGroup().addTo(map);
-    map.on('click', e => onSelect(e.latlng));
+    map.on('click', e => { Sound.play('pin'); onSelect(e.latlng); });
     mapRef.current = map;
     return () => map.remove();
   }, []);
@@ -538,7 +592,7 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     if (startPts.length) map.fitBounds(startPts, { padding: [30, 30], maxZoom: 12 });
-    map.on('click', e => onGuessRef.current(e.latlng));
+    map.on('click', e => { Sound.play('pin'); onGuessRef.current(e.latlng); });
     mapRef.current = map;
     return () => map.remove();
   }, []);
@@ -618,15 +672,22 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   function answer(c) {   // 写真問題
     if (picked) return;
     setPicked(c.id);
-    if (c.id === qs[idx].record.id) setScore(s => s + 1);
+    const ok = c.id === qs[idx].record.id;
+    Sound.play(ok ? 'correct' : 'wrong');
+    if (ok) setScore(s => s + 1);
   }
   function submitGuess() {   // 場所問題
     if (!guess || revealed) return;
     setRevealed(true);
-    if (nearestDist(guess, qs[idx].answers) <= HIT_M) setScore(s => s + 1);
+    const hit = nearestDist(guess, qs[idx].answers) <= HIT_M;
+    Sound.play(hit ? 'correct' : 'wrong');
+    if (hit) setScore(s => s + 1);
   }
   function next() {
-    if (idx + 1 >= qs.length) { setPhase('result'); return; }
+    if (idx + 1 >= qs.length) {
+      if (score >= qs.length / 2) Sound.play('finish');   // 半分以上正解で、ファンファーレ
+      setPhase('result'); return;
+    }
     setIdx(idx + 1); setPicked(null); setGuess(null); setRevealed(false);
   }
 
@@ -700,7 +761,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
                       onGuess={g => { if (!revealed) setGuess(g); }} />
           </div>
           {!revealed && (
-            <button onClick={submitGuess} disabled={!guess}>
+            <button data-silent="1" onClick={submitGuess} disabled={!guess}>
               {guess ? 'ここで回答する' : '地図をタップして、場所を選んでください'}
             </button>
           )}
@@ -732,7 +793,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
               if (c.id === r.id) cls += ' correct';
               else if (c.id === picked) cls += ' wrong';
             }
-            return <button key={c.id} className={cls} onClick={() => answer(c)}><img src={c.photo} /></button>;
+            return <button key={c.id} className={cls} data-silent="1" onClick={() => answer(c)}><img src={c.photo} /></button>;
           })}
         </div>
         {picked && (
@@ -794,21 +855,25 @@ function App() {
   }
 
   function addRecord(r) {
+    Sound.play('save');
     setRecords(prev => [...prev, { ...r, tripId: currentId }]);
     setSelected(null);
   }
   function addRecords(list) {
+    Sound.play('save');
     setRecords(prev => [...prev, ...list.map(r => ({ ...r, tripId: currentId }))]);
     setFitKey(k => k + 1);
     setSelected(null);
   }
   function updateRecord(id, changes) {
+    Sound.play('save');
     setRecords(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r));
     setEditingId(null); setSelected(null);
   }
   function startEdit(id) { setSelected(null); setEditingId(id); setFocus({ id }); }
   function cancelEdit() { setEditingId(null); setSelected(null); }
   function deleteRecord(id) {
+    Sound.play('delete');
     setRecords(prev => prev.filter(r => r.id !== id));
     if (editingId === id) setEditingId(null);
   }
@@ -825,7 +890,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 style={{ background: '#888', marginTop: 0 }}>← タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v13</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v14</small></h1>
         <label>旅行を選ぶ
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
@@ -852,6 +917,25 @@ function App() {
   );
 }
 
+// ---------- 音のオン／オフボタン（画面の右下） ----------
+function SoundToggle() {
+  const [on, setOn] = useState(Sound.enabled);
+  function toggle() {
+    const v = !on;
+    setOn(v);
+    Sound.setEnabled(v);
+    if (v) Sound.play('click');   // オンにしたとき、音が出ることをすぐ確認できる
+  }
+  return (
+    <button data-silent="1" onClick={toggle} aria-label="効果音のオン／オフ" title={on ? '効果音：オン' : '効果音：オフ'}
+            style={{ position: 'fixed', right: 10, bottom: 36, zIndex: 2000, width: 44, height: 44, borderRadius: '50%',
+                     padding: 0, margin: 0, fontSize: 20, background: on ? '#2a7de1' : '#888',
+                     boxShadow: '0 1px 6px rgba(0,0,0,0.4)' }}>
+      {on ? '🔊' : '🔇'}
+    </button>
+  );
+}
+
 // ---------- エラーが起きたとき、真っ白にせず内容を表示 ----------
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -872,4 +956,4 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App /></ErrorBoundary>);
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App /><SoundToggle /></ErrorBoundary>);
