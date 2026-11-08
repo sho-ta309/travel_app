@@ -458,37 +458,75 @@ function shuffle(arr) {
   return a;
 }
 
-// 写真を選ぶ問題。pool：出題する記録 / allPhotos：写真つきの全記録（不正解の選択肢の材料）
-function makeQuestions(pool, allPhotos, count) {
+function tripHeader(trips, tripId) {
+  const t = trips.find(x => x.id === tripId);
+  return t ? '旅行：' + t.name : '';
+}
+
+// 時刻つきの記録を「旅行・日付・時間帯」ごとにまとめる
+// style: 'hour'＝12時台でまとめる / 'exact'＝12:30のように、同じ時刻でまとめる
+function timeGroups(records, style) {
+  const map = {};
+  records.forEach(r => {
+    if (!r.time || !validLatLng(r.lat, r.lng)) return;
+    const slot = style === 'hour' ? r.time.slice(0, 2) : r.time;
+    const key = r.tripId + '|' + r.date + '|' + slot;
+    if (!map[key]) map[key] = { tripId: r.tripId, date: r.date, slot, records: [] };
+    map[key].records.push(r);
+  });
+  return Object.values(map);
+}
+function slotLabel(g, style) { return style === 'hour' ? Number(g.slot) + '時台' : g.slot + ' ごろ'; }
+
+// ① 質問・タイトルから、写真を選ぶ問題
+function makeQuestions(pool, allPhotos, count, trips) {
   return shuffle(pool).slice(0, count).map(r => {
     const others = allPhotos.filter(x => x.id !== r.id && x.photo !== r.photo);
     const same = shuffle(others.filter(x => x.tripId === r.tripId));   // 同じ旅行の写真を優先
     const diff = shuffle(others.filter(x => x.tripId !== r.tripId));
     return {
       type: 'photo', record: r,
-      header: r.date + (r.question ? ' ／ ' + r.title : ''),
+      header: tripHeader(trips, r.tripId) + ' ／ ' + r.date + (r.question ? ' ／ ' + r.title : ''),
       text: r.question || '「' + r.title + '」の写真はどれ？',
       choices: shuffle([r, ...[...same, ...diff].slice(0, 3)])
     };
   });
 }
 
-// 場所を選ぶ問題（時刻を入れた記録だけが対象）
-function makePlaceQuestions(pool, trips, count) {
-  return shuffle(pool).slice(0, count).map(r => {
-    const trip = trips.find(t => t.id === r.tripId);
+// ② 時間から、いた場所を地図で選ぶ問題
+function makePlaceQuestions(groups, trips, count, style) {
+  return shuffle(groups).slice(0, count).map(g => ({
+    type: 'place', answers: g.records,
+    header: tripHeader(trips, g.tripId),
+    text: g.date + ' の ' + slotLabel(g, style) + '、どこにいた？'
+  }));
+}
+
+// ③ 時間から、いた場所の写真を選ぶ問題
+function makeTimePhotoQuestions(groups, allPhotos, trips, count, style) {
+  return shuffle(groups).slice(0, count).map(g => {
+    const ids = g.records.map(r => r.id);
+    const correct = shuffle(g.records.filter(r => r.photo))[0];
+    const others = allPhotos.filter(x => !ids.includes(x.id) && x.photo !== correct.photo);
+    const same = shuffle(others.filter(x => x.tripId === g.tripId));
+    const diff = shuffle(others.filter(x => x.tripId !== g.tripId));
     return {
-      type: 'place', record: r,
-      header: trip ? '旅行：' + trip.name : '',
-      text: r.date + ' の ' + r.time + ' ごろ、どこにいた？'
+      type: 'photo', record: correct,
+      header: tripHeader(trips, g.tripId),
+      text: g.date + ' の ' + slotLabel(g, style) + '、いた場所の写真はどれ？',
+      choices: shuffle([correct, ...[...same, ...diff].slice(0, 3)])
     };
   });
 }
 
 function fmtDist(d) { return d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
+// 答えの場所から、一番近い正解までの距離（正解が複数あるときは、近いほうで判定）
+function nearestDist(guess, answers) {
+  return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
+}
 
 // ---------- 部品：答えの場所を選ぶ地図 ----------
-function GuessMap({ guess, onGuess, revealed, answerLat, answerLng, startPts }) {
+function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
   const divRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null);
   const onGuessRef = useRef(onGuess);
   onGuessRef.current = onGuess;   // いつも最新の関数を使えるようにしておく
@@ -499,13 +537,13 @@ function GuessMap({ guess, onGuess, revealed, answerLat, answerLng, startPts }) 
       maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
-    if (startPts.length) map.fitBounds(startPts, { padding: [30, 30], maxZoom: 12 });   // 旅行の範囲から始める
+    if (startPts.length) map.fitBounds(startPts, { padding: [30, 30], maxZoom: 12 });
     map.on('click', e => onGuessRef.current(e.latlng));
     mapRef.current = map;
     return () => map.remove();
   }, []);
 
-  // 答えの印と、正解の表示
+  const ansKey = JSON.stringify(answers.map(a => [a.lat, a.lng]));
   useEffect(() => {
     const g = layerRef.current;
     g.clearLayers();
@@ -514,13 +552,14 @@ function GuessMap({ guess, onGuess, revealed, answerLat, answerLng, startPts }) 
         .addTo(g).bindTooltip('あなたの答え', { permanent: revealed });
     }
     if (revealed && guess) {
-      const ans = L.latLng(answerLat, answerLng);
-      L.circleMarker(ans, { radius: 9, color: '#27ae60', fillOpacity: 0.8 })
-        .addTo(g).bindTooltip('正解の場所', { permanent: true });
-      L.polyline([guess, ans], { color: '#888', dashArray: '6' }).addTo(g);
-      mapRef.current.fitBounds([guess, ans], { padding: [60, 60], maxZoom: 16 });
+      const pts = answers.map(a => L.latLng(a.lat, a.lng));
+      pts.forEach(pt => L.circleMarker(pt, { radius: 9, color: '#27ae60', fillOpacity: 0.8 })
+        .addTo(g).bindTooltip('正解の場所', { permanent: true }));
+      const near = pts.reduce((a, b) => guess.distanceTo(a) <= guess.distanceTo(b) ? a : b);
+      L.polyline([guess, near], { color: '#888', dashArray: '6' }).addTo(g);
+      mapRef.current.fitBounds([guess, ...pts], { padding: [60, 60], maxZoom: 16 });
     }
-  }, [guess, revealed, answerLat, answerLng]);
+  }, [guess, revealed, ansKey]);
 
   // 検索バーで見つけた場所へ地図を動かすだけ（答えにはならない）
   function flyTo(p) {
@@ -544,8 +583,9 @@ function GuessMap({ guess, onGuess, revealed, answerLat, answerLng, startPts }) 
 // ---------- 画面：クイズ ----------
 function Quiz({ records, trips, currentTripId, onExit }) {
   const [phase, setPhase] = useState('setup');   // setup → play → result
-  const [mode, setMode] = useState('photo');     // 'photo' | 'place' | 'mix'
-  const [tripSel, setTripSel] = useState(String(currentTripId));   // 'all' か旅行のid
+  const [kinds, setKinds] = useState({ photo: true, place: true, timePhoto: true });   // 問題の種類（複数選べる）
+  const [timeStyle, setTimeStyle] = useState('hour');   // 'hour'＝12時台 / 'exact'＝12:30ごろ
+  const [tripSel, setTripSel] = useState('all');        // 'all'＝すべての旅行を混ぜる / 旅行のid
   const [count, setCount] = useState(5);
   const [qs, setQs] = useState([]);
   const [idx, setIdx] = useState(0);
@@ -557,17 +597,22 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   const inTrip = r => tripSel === 'all' || String(r.tripId) === tripSel;
   const withPhoto = records.filter(r => r.photo);
   const photoPool = withPhoto.filter(inTrip);
-  const timePool = records.filter(r => r.time && validLatLng(r.lat, r.lng) && inTrip(r));
-  const usePhoto = mode !== 'place' && withPhoto.length >= 2;
-  const usePlace = mode !== 'photo';
-  const available = (usePhoto ? photoPool.length : 0) + (usePlace ? timePool.length : 0);
+  const groups = timeGroups(records.filter(inTrip), timeStyle);
+  // 「時間から写真」：その時間帯に写真があり、ほかに選択肢にできる写真もあるもの
+  const tpGroups = groups.filter(g => {
+    const n = g.records.filter(r => r.photo).length;
+    return n > 0 && withPhoto.length > n;
+  });
+  const usePhoto = kinds.photo && withPhoto.length >= 2;
+  const available = (usePhoto ? photoPool.length : 0) + (kinds.place ? groups.length : 0) + (kinds.timePhoto ? tpGroups.length : 0);
   const grayBtn = { background: '#888' };
 
   function start() {
     let list = [];
-    if (usePhoto) list = list.concat(makeQuestions(photoPool, withPhoto, count));
-    if (usePlace) list = list.concat(makePlaceQuestions(timePool, trips, count));
-    setQs(shuffle(list).slice(0, count));
+    if (usePhoto) list = list.concat(makeQuestions(photoPool, withPhoto, count, trips));
+    if (kinds.place) list = list.concat(makePlaceQuestions(groups, trips, count, timeStyle));
+    if (kinds.timePhoto) list = list.concat(makeTimePhotoQuestions(tpGroups, withPhoto, trips, count, timeStyle));
+    setQs(shuffle(list).slice(0, count));   // 種類が混ざるように、シャッフルしてから切り出す
     setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setPhase('play');
   }
   function answer(c) {   // 写真問題
@@ -577,9 +622,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   }
   function submitGuess() {   // 場所問題
     if (!guess || revealed) return;
-    const r = qs[idx].record;
     setRevealed(true);
-    if (guess.distanceTo(L.latLng(r.lat, r.lng)) <= HIT_M) setScore(s => s + 1);
+    if (nearestDist(guess, qs[idx].answers) <= HIT_M) setScore(s => s + 1);
   }
   function next() {
     if (idx + 1 >= qs.length) { setPhase('result'); return; }
@@ -590,29 +634,45 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     <div className="screen"><div className="inner">
       <button style={{ ...grayBtn, width: 'auto' }} onClick={onExit}>← タイトルへ</button>
       <h2>🎯 クイズ</h2>
-      <label>問題の種類
-        <select value={mode} onChange={e => setMode(e.target.value)}>
-          <option value="photo">写真を選ぶ</option>
-          <option value="place">場所を選ぶ（時刻を入れた記録）</option>
-          <option value="mix">ミックス</option>
-        </select>
-      </label>
-      <label>出題する旅行
+
+      <label>出題する旅行（「すべての旅行」で、全部を混ぜて出題します）
         <select value={tripSel} onChange={e => setTripSel(e.target.value)}>
-          <option value="all">すべての旅行</option>
+          <option value="all">すべての旅行（混ぜる）</option>
           {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
         </select>
       </label>
+
+      <div style={{ marginTop: 10, fontSize: 13 }}>問題の種類（複数選ぶと、混ぜて出題します）</div>
+      {[['photo', '質問・タイトルから、写真を選ぶ'],
+        ['place', '時間から、いた場所を地図で選ぶ'],
+        ['timePhoto', '時間から、いた場所の写真を選ぶ']].map(([k, label]) => (
+        <label key={k}>
+          <input type="checkbox" checked={kinds[k]} style={{ width: 'auto' }}
+                 onChange={e => setKinds({ ...kinds, [k]: e.target.checked })} /> {label}
+        </label>
+      ))}
+
+      {(kinds.place || kinds.timePhoto) && (
+        <label>時間の聞き方
+          <select value={timeStyle} onChange={e => setTimeStyle(e.target.value)}>
+            <option value="hour">時間帯（例：12時台）</option>
+            <option value="exact">ちょうどの時刻（例：12:30ごろ）</option>
+          </select>
+        </label>
+      )}
+
       <label>問題数
         <select value={count} onChange={e => setCount(Number(e.target.value))}>
           {[3, 5, 10].map(n => <option key={n} value={n}>{n}問</option>)}
         </select>
       </label>
+
       <p style={{ fontSize: 13 }}>
-        出題できる数：写真 {photoPool.length}件 ／ 場所（時刻つき）{timePool.length}件
+        出題できる数：写真（質問・タイトル）{photoPool.length} ／ 時間から場所 {groups.length} ／ 時間から写真 {tpGroups.length}
       </p>
-      {mode !== 'place' && withPhoto.length < 2 && <p className="msg">写真の問題には、写真つきの記録が2件以上必要です</p>}
-      {mode !== 'photo' && timePool.length === 0 && <p className="msg">場所の問題には、「時刻」を入れた記録が必要です（記録の「編集」で入れられます）</p>}
+      {kinds.photo && withPhoto.length < 2 && <p className="msg">写真の問題には、写真つきの記録が2件以上必要です</p>}
+      {(kinds.place || kinds.timePhoto) && groups.length === 0 &&
+        <p className="msg">時間の問題には、「時刻」を入れた記録が必要です（記録の「編集」で入れられます）</p>}
       <button onClick={start} disabled={available < 1}>スタート</button>
       <p style={{ fontSize: 12, color: '#666' }}>
         ヒント：記録するとき「クイズの質問」（例：お昼ご飯は？）を書くと、写真の問題でその質問が出ます。
@@ -622,21 +682,21 @@ function Quiz({ records, trips, currentTripId, onExit }) {
 
   if (phase === 'play') {
     const q = qs[idx];
-    const r = q.record;
     const bar = <div className="quizHeader">第{idx + 1}問 / {qs.length}　正解 {score}</div>;
 
-    // ---- 場所を選ぶ問題 ----
+    // ---- 時間から、いた場所を選ぶ問題 ----
     if (q.type === 'place') {
-      const d = revealed && guess ? guess.distanceTo(L.latLng(r.lat, r.lng)) : 0;
+      const d = revealed && guess ? nearestDist(guess, q.answers) : 0;
+      const pic = q.answers.find(a => a.photo);
+      const memo = q.answers.find(a => a.memo);
       return (
         <div className="screen"><div className="inner">
           {bar}
           <div className="quizHeader">{q.header}</div>
           <div className="quizQ">{q.text}</div>
           <div className="guessMap">
-            <GuessMap key={idx} guess={guess} revealed={revealed}
-                      answerLat={r.lat} answerLng={r.lng}
-                      startPts={timePool.map(x => [x.lat, x.lng])}
+            <GuessMap key={idx} guess={guess} revealed={revealed} answers={q.answers}
+                      startPts={groups.flatMap(g => g.records.map(x => [x.lat, x.lng]))}
                       onGuess={g => { if (!revealed) setGuess(g); }} />
           </div>
           {!revealed && (
@@ -648,9 +708,9 @@ function Quiz({ records, trips, currentTripId, onExit }) {
             <div className={'fb ' + (d <= HIT_M ? 'ok' : 'ng')}>
               <b>{d <= HIT_M ? '正解！🎉' : d <= HIT_M * 5 ? 'おしい！' : '残念…'}</b>
               <div>正解の場所まで {fmtDist(d)}（{fmtDist(HIT_M)}以内で正解）</div>
-              <div>{r.date} {r.time} ／ {r.title}</div>
-              {r.memo && <div style={{ fontSize: 13 }}>{r.memo}</div>}
-              {r.photo && <img src={r.photo} style={{ width: '100%', borderRadius: 6, marginTop: 6 }} />}
+              {q.answers.map(a => <div key={a.id}>{a.time} ／ {a.title}</div>)}
+              {memo && <div style={{ fontSize: 13 }}>{memo.memo}</div>}
+              {pic && <img src={pic.photo} style={{ width: '100%', borderRadius: 6, marginTop: 6 }} />}
               <button onClick={next}>{idx + 1 >= qs.length ? '結果を見る' : '次の問題へ'}</button>
             </div>
           )}
@@ -658,7 +718,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       );
     }
 
-    // ---- 写真を選ぶ問題 ----
+    // ---- 写真を選ぶ問題（質問・タイトルから／時間から） ----
+    const r = q.record;
     return (
       <div className="screen"><div className="inner">
         {bar}
@@ -764,7 +825,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 style={{ background: '#888', marginTop: 0 }}>← タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v12</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v13</small></h1>
         <label>旅行を選ぶ
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
