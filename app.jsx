@@ -333,7 +333,7 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel }) {
 
   return (
     <form ref={formRef} onSubmit={handleSubmit}>
-      <label>タイトル <input value={title} onChange={e => setTitle(e.target.value)} required /></label>
+      <label>写真のタイトル <input value={title} onChange={e => setTitle(e.target.value)} required /></label>
       <label>日付 <input type="date" value={date} onChange={e => setDate(e.target.value)} required /></label>
       <label>時刻（任意） <input type="time" value={time} onChange={e => setTime(e.target.value)} /></label>
       <label>メモ <textarea rows="2" value={memo} onChange={e => setMemo(e.target.value)} /></label>
@@ -369,7 +369,7 @@ function BulkImport({ onAdd, selected }) {
     let files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     e.target.value = '';
     if (!files.length) return;
-    const MAX = 8;   // 一度に読み込む上限（スマホのメモリ対策）
+    const MAX = 20;   // 一度に読み込む上限（スマホのメモリ対策）
     if (files.length > MAX) {
       alert('一度に読み込めるのは' + MAX + '枚までです。最初の' + MAX + '枚を読み込みます');
       files = files.slice(0, MAX);
@@ -500,7 +500,7 @@ function Home({ trips, records, onGo }) {
 }
 
 // ---------- クイズの問題を作る ----------
-const HIT_M = 1000;   // 「場所を選ぶ」問題：正解の場所から、この距離（m）以内なら正解
+const HIT_M = 5000;   // 「場所を選ぶ」問題：正解の場所から、この距離（m）以内なら正解
 
 function shuffle(arr) {
   const a = arr.slice();
@@ -766,7 +766,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
           )}
           {revealed && (
             <div className={'fb ' + (d <= HIT_M ? 'ok' : 'ng')}>
-              <b>{d <= HIT_M ? '正解！🎉' : d <= HIT_M * 5 ? 'おしい！' : '残念…'}</b>
+              <b>{d <= HIT_M ? '正解です！' : d <= HIT_M * 5 ? 'おしい！もう少し！' : '残念…違います。'}</b>
               <div>正解の場所まで {fmtDist(d)}（{fmtDist(HIT_M)}以内で正解）</div>
               {q.answers.map(a => <div key={a.id}>{a.time} ／ {a.title}</div>)}
               {memo && <div style={{ fontSize: 13 }}>{memo.memo}</div>}
