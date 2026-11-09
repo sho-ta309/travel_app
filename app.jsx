@@ -59,6 +59,10 @@ document.addEventListener('click', e => {
   if (b && !b.disabled && !b.closest('[data-silent]')) Sound.play('click');
 });
 
+// ---------- 地図のピン（見た目は style.css の .pin） ----------
+const PIN = L.divIcon({ className: 'pin', html: '<span></span>', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
+const PIN_TEMP = L.divIcon({ className: 'pin temp', html: '<span></span>', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
+
 // ---------- 共通の道具 ----------
 // 緯度・経度が正しい数値か（0,0 は「位置情報が空」のときの値なので除外）
 function validLatLng(lat, lng) {
@@ -228,7 +232,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
     markersRef.current = {};
     records.forEach(r => {
       if (!validLatLng(r.lat, r.lng)) return;
-      const m = L.marker([r.lat, r.lng]).bindPopup(() => makePopup(r), { maxWidth: 150 });
+      const m = L.marker([r.lat, r.lng], { icon: PIN }).bindPopup(() => makePopup(r), { maxWidth: 150 });
       m.on('click', () => Sound.play('select'));   // ピンを押したときの音
       groupRef.current.addLayer(m);
       markersRef.current[r.id] = m;
@@ -246,7 +250,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus }) {
   useEffect(() => {
     if (tempRef.current) { mapRef.current.removeLayer(tempRef.current); tempRef.current = null; }
     if (selected) {
-      tempRef.current = L.marker(selected).addTo(mapRef.current)
+      tempRef.current = L.marker(selected, { icon: PIN_TEMP }).addTo(mapRef.current)
         .bindTooltip('クリックで取り消し').on('click', () => { Sound.play('delete'); onSelect(null); });
     }
   }, [selected]);
@@ -354,7 +358,7 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel }) {
         <input type="file" accept="image/*" ref={fileRef} />
       </label>
       <button type="submit">{editing ? '更新する' : 'この場所を記録する'}</button>
-      {editing && <button type="button" style={{ background: '#888' }} onClick={onCancel}>編集をやめる</button>}
+      {editing && <button type="button" className="ghost" onClick={onCancel}>編集をやめる</button>}
       <div className="msg">{msg}</div>
     </form>
   );
@@ -428,7 +432,7 @@ function BulkImport({ onAdd, selected }) {
           <input value={i.title}
                  onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
           <small>{i.date}{i.time ? ' ' + i.time : ''}{i.dateFromExif ? '（撮影日時）' : '（ファイルの更新日）'}</small><br />
-          <small>{validLatLng(i.lat, i.lng) ? '📍 位置情報あり' : '⚠ 位置情報なし'}</small>
+          <small className={validLatLng(i.lat, i.lng) ? 'tag ok' : 'tag ng'}>{validLatLng(i.lat, i.lng) ? '位置情報あり' : '位置情報なし'}</small>
         </div>
       ))}
 
@@ -437,7 +441,7 @@ function BulkImport({ onAdd, selected }) {
         ? <button onClick={importToSelected}>位置情報のない{noGps.length}件を、地図で選んだ場所に記録する</button>
         : <div className="msg">位置情報のない{noGps.length}件は、地図をクリック（または検索）して場所を選ぶと、その場所にまとめて登録できます</div>)}
       {broken > 0 && <div className="msg">{broken}件は、読み込めない形式のため登録できません</div>}
-      {items.length > 0 && <button style={{ background: '#888' }} onClick={() => setItems([])}>一覧を閉じる</button>}
+      {items.length > 0 && <button className="ghost" onClick={() => setItems([])}>一覧を閉じる</button>}
     </div>
   );
 }
@@ -448,7 +452,7 @@ function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
     <div className="record" onClick={() => onFocus(record.id)}
          style={isEditing ? { outline: '2px solid #2a7de1' } : undefined}>
       <b>{record.title}</b> <small>{record.date}{record.time ? ' ' + record.time : ''}</small><br />
-      {record.question && <small>❓ {record.question}<br /></small>}
+      {record.question && <small className="qline">問：{record.question}<br /></small>}
       <button className="edit" onClick={e => { e.stopPropagation(); onEdit(record.id); }}>編集</button>
       <button className="del" onClick={e => {
         e.stopPropagation();
@@ -459,40 +463,24 @@ function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
   );
 }
 
-// ---------- タイトル画面・クイズ画面の見た目（CSS） ----------
-// ※ style.css に移してもかまいません
-const EXTRA_CSS = `
-.guessMap { position: relative; height: 55vh; min-height: 300px; border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
-.screen { flex: 1; overflow-y: auto; padding: 20px 14px; background: #f0f6ff; }
-.screen .inner { max-width: 560px; margin: 0 auto; }
-.homeBtn { display: block; text-align: left; padding: 18px; margin-top: 14px; font-size: 18px; border-radius: 12px; background: #2a7de1; }
-.homeBtn small { display: block; font-size: 12px; margin-top: 4px; font-weight: normal; }
-.homeBtn.quiz { background: #e67e22; }
-.homeBtn:disabled { background: #aaa; cursor: not-allowed; }
-.quizHeader { font-size: 13px; color: #666; margin-top: 4px; }
-.quizQ { font-size: 20px; font-weight: bold; margin: 8px 0 14px; }
-.quizGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.choice { padding: 0; margin: 0; background: #fff; border: 4px solid #ddd; border-radius: 10px; overflow: hidden; cursor: pointer; }
-.choice img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
-.choice.correct { border-color: #27ae60; }
-.choice.wrong { border-color: #c0392b; opacity: .7; }
-.fb { margin-top: 14px; padding: 10px; border-radius: 8px; background: #fff; }
-.fb.ok b { color: #27ae60; } .fb.ng b { color: #c0392b; }
-`;
-
 // ---------- 画面：タイトル（登録・クイズを選ぶ） ----------
 function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
   return (
-    <div className="screen"><div className="inner">
-      <h1 style={{ fontSize: 28 }}>自分だけの旅行記録</h1>
-      <p>旅の思い出を残して思い出そう。<br />
-        <small>旅行 {trips.length}件 ／ 記録 {records.length}件 ／ 写真 {photoCount}枚</small></p>
+    <div className="screen home"><div className="inner">
+      <div className="homeEyebrow">TRAVEL JOURNAL</div>
+      <h1>自分だけの旅行記録</h1>
+      <p className="homeLead">旅の思い出を残して思い出そう。</p>
+      <div className="homeStats">
+        <div><b>{trips.length}</b><span>旅行</span></div>
+        <div><b>{records.length}</b><span>記録</span></div>
+        <div><b>{photoCount}</b><span>写真</span></div>
+      </div>
       <button className="homeBtn" onClick={() => onGo('register')}>
-        旅行を記録する<small>地図と写真で、旅の記録を登録・編集</small>
+        <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で、旅の記録を登録・編集</small>
       </button>
-      <button className="homeBtn quiz" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
-        旅行の記憶クイズに挑戦
+      <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
+        <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
         <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
       </button>
     </div></div>
@@ -572,7 +560,7 @@ function makeTimePhotoQuestions(groups, allPhotos, trips, count, style) {
   });
 }
 
-function fmtDist(d) { return d < 5000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
+function fmtDist(d) { return d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
 // 答えの場所から、一番近い正解までの距離（正解が複数あるときは、近いほうで判定）
 function nearestDist(guess, answers) {
   return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
@@ -601,12 +589,12 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
     const g = layerRef.current;
     g.clearLayers();
     if (guess) {
-      L.circleMarker(guess, { radius: 9, color: '#2a7de1', fillOpacity: 0.8 })
+      L.circleMarker(guess, { radius: 9, color: '#14213d', fillOpacity: 0.8 })
         .addTo(g).bindTooltip('あなたの答え', { permanent: revealed });
     }
     if (revealed && guess) {
       const pts = answers.map(a => L.latLng(a.lat, a.lng));
-      pts.forEach(pt => L.circleMarker(pt, { radius: 9, color: '#27ae60', fillOpacity: 0.8 })
+      pts.forEach(pt => L.circleMarker(pt, { radius: 9, color: '#2f6b4f', fillOpacity: 0.8 })
         .addTo(g).bindTooltip('正解の場所', { permanent: true }));
       const near = pts.reduce((a, b) => guess.distanceTo(a) <= guess.distanceTo(b) ? a : b);
       L.polyline([guess, near], { color: '#888', dashArray: '6' }).addTo(g);
@@ -658,7 +646,6 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   });
   const usePhoto = kinds.photo && withPhoto.length >= 2;
   const available = (usePhoto ? photoPool.length : 0) + (kinds.place ? groups.length : 0) + (kinds.timePhoto ? tpGroups.length : 0);
-  const grayBtn = { background: '#888' };
 
   function start() {
     let list = [];
@@ -692,7 +679,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
 
   if (phase === 'setup') return (
     <div className="screen"><div className="inner">
-      <button style={{ ...grayBtn, width: 'auto' }} onClick={onExit}>← タイトルへ</button>
+      <button className="ghost" onClick={onExit}>‹ タイトルへ</button>
       <h2>旅の記憶クイズ</h2>
 
       <label>問題を出題する旅行（「すべての旅行」で全部を混ぜて出題します）
@@ -797,7 +784,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
         </div>
         {picked && (
           <div className={'fb ' + (picked === r.id ? 'ok' : 'ng')}>
-            <b>{picked === r.id ? '正解！🎉' : '残念…'}</b>
+            <b>{picked === r.id ? '正解です' : '不正解です'}</b>
             <div>{r.date}{r.time ? ' ' + r.time : ''} ／ {r.title}</div>
             {r.memo && <div style={{ fontSize: 13 }}>{r.memo}</div>}
             <button onClick={next}>{idx + 1 >= qs.length ? '結果を見る' : '次の問題へ'}</button>
@@ -813,8 +800,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       <p style={{ fontSize: 28 }}>{score} / {qs.length} 問正解</p>
       <p>{score === qs.length ? '全問正解！良い旅行になりましたね！' : score >= qs.length / 2 ? 'その調子！もっと記憶を掘り返してみよう！' : 'その旅行、意味ありました？覚えてない旅行は意味がなくなっちゃうよ。'}</p>
       <button onClick={start}>もう一度挑戦（問題を作り直す）</button>
-      <button style={grayBtn} onClick={() => setPhase('setup')}>設定に戻る</button>
-      <button style={grayBtn} onClick={onExit}>タイトル画面に戻る</button>
+      <button className="ghost" onClick={() => setPhase('setup')}>設定に戻る</button>
+      <button className="ghost" onClick={onExit}>タイトル画面に戻る</button>
     </div></div>
   );
 }
@@ -842,12 +829,12 @@ function App() {
 
   // 画面の切り替え：タイトル／クイズのときは、ここで終わり
   if (screen === 'home') {
-    return <><style>{EXTRA_CSS}</style><Home trips={tripData.trips} records={records} onGo={setScreen} /></>;
+    return <><Home trips={tripData.trips} records={records} onGo={setScreen} /></>;
   }
   if (screen === 'quiz') {
     return (
       <>
-        <style>{EXTRA_CSS}</style>
+        
         <Quiz records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />
       </>
     );
@@ -888,8 +875,8 @@ function App() {
     <>
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
-                style={{ background: '#888', marginTop: 0 }}>← タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v15</small></h1>
+                className="ghost">‹ タイトルへ</button>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v16</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
@@ -926,11 +913,13 @@ function SoundToggle() {
     if (v) Sound.play('click');   // オンにしたとき、音が出ることをすぐ確認できる
   }
   return (
-    <button data-silent="1" onClick={toggle} aria-label="効果音のオン／オフ" title={on ? '効果音：オン' : '効果音：オフ'}
-            style={{ position: 'fixed', right: 10, bottom: 36, zIndex: 2000, width: 44, height: 44, borderRadius: '50%',
-                     padding: 0, margin: 0, fontSize: 20, background: on ? '#2a7de1' : '#888',
-                     boxShadow: '0 1px 6px rgba(0,0,0,0.4)' }}>
-      {on ? '🔊' : '🔇'}
+    <button data-silent="1" className="soundBtn" onClick={toggle} aria-label="効果音のオン／オフ" title={on ? '効果音：オン' : '効果音：オフ'}>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M3 9v6h4l5 4V5L7 9H3z" fill="currentColor" />
+        {on
+          ? <path d="M15.5 8.5a5 5 0 010 7M18 6a9 9 0 010 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          : <path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />}
+      </svg>
     </button>
   );
 }
