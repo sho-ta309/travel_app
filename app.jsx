@@ -154,7 +154,7 @@ function makePopup(r) {
   div.querySelector('p').textContent = r.memo;
   if (r.photo) {
     const img = document.createElement('img');
-    img.src = r.photo; img.style.width = '120px';
+    img.src = r.photo; img.className = 'popPhoto';
     div.appendChild(img);
   }
   return div;
@@ -448,42 +448,71 @@ function BulkImport({ onAdd, selected }) {
 
 // ---------- 部品：記録1件のカード ----------
 function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
+  const [gone, setGone] = useState(false);   // 削除するとき、先にふわっと消す
+  function remove(e) {
+    e.stopPropagation();
+    if (!confirm('「' + record.title + '」を削除しますか？')) return;
+    setGone(true);
+    setTimeout(() => onDelete(record.id), 280);
+  }
   return (
-    <div className="record" onClick={() => onFocus(record.id)}
-         style={isEditing ? { outline: '2px solid #2a7de1' } : undefined}>
-      <b>{record.title}</b> <small>{record.date}{record.time ? ' ' + record.time : ''}</small><br />
-      {record.question && <small className="qline">問：{record.question}<br /></small>}
-      <button className="edit" onClick={e => { e.stopPropagation(); onEdit(record.id); }}>編集</button>
-      <button className="del" onClick={e => {
-        e.stopPropagation();
-        if (confirm('「' + record.title + '」を削除しますか？')) onDelete(record.id);
-      }}>削除</button>
-      {record.photo && <img src={record.photo} loading="lazy" decoding="async" />}
+    <div className={'record' + (isEditing ? ' editing' : '') + (gone ? ' gone' : '')} onClick={() => onFocus(record.id)}>
+      <div className="recordRow">
+        {record.photo && <img className="thumb" src={record.photo} alt="" loading="lazy" decoding="async" />}
+        <div className="recordBody">
+          <b>{record.title}</b>
+          <small>{record.date}{record.time ? ' ' + record.time : ''}</small>
+          {record.question && <small className="qline">問：{record.question}</small>}
+          <div>
+            <button className="edit" onClick={e => { e.stopPropagation(); onEdit(record.id); }}>編集</button>
+            <button className="del" onClick={remove}>削除</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ---------- 画面：タイトル（登録・クイズを選ぶ） ----------
+// 流れる丸い写真（タイトル画面の飾り）
+function Marquee({ photos, reverse }) {
+  const base = [];
+  while (base.length < 10) base.push(...photos);   // 写真が少ないときは、くり返して幅を埋める
+  return (
+    <div className={'marquee' + (reverse ? ' rev' : '')} aria-hidden="true">
+      <div className="marqueeTrack">
+        {[...base, ...base].map((p, i) => <img key={i} className="bubble" src={p} alt="" loading="lazy" decoding="async" />)}
+      </div>
+    </div>
+  );
+}
+
 function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
+  // 流す写真は最大8枚（スマホのメモリ対策）
+  const bubbles = useMemo(() => shuffle(records.filter(r => r.photo).map(r => r.photo)).slice(0, 8), [records]);
   return (
-    <div className="screen home"><div className="inner">
-      <div className="homeEyebrow">TRAVEL JOURNAL</div>
-      <h1>自分だけの旅行記録</h1>
-      <p className="homeLead">旅の思い出を残して思い出そう。</p>
-      <div className="homeStats">
-        <div><b>{trips.length}</b><span>旅行</span></div>
-        <div><b>{records.length}</b><span>記録</span></div>
-        <div><b>{photoCount}</b><span>写真</span></div>
+    <div className="screen home">
+      {bubbles.length > 0 && <Marquee photos={bubbles} reverse />}
+      <div className="inner">
+        <div className="homeEyebrow">TRAVEL JOURNAL</div>
+        <h1>自分だけの旅行記録</h1>
+        <p className="homeLead">旅の思い出を残して思い出そう。</p>
+        <div className="homeStats">
+          <div><b>{trips.length}</b><span>旅行</span></div>
+          <div><b>{records.length}</b><span>記録</span></div>
+          <div><b>{photoCount}</b><span>写真</span></div>
+        </div>
+        <button className="homeBtn" onClick={() => onGo('register')}>
+          <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で、旅の記録を登録・編集</small>
+        </button>
+        <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
+          <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
+          <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
+        </button>
       </div>
-      <button className="homeBtn" onClick={() => onGo('register')}>
-        <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で、旅の記録を登録・編集</small>
-      </button>
-      <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
-        <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
-        <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
-      </button>
-    </div></div>
+      {bubbles.length > 0 && <Marquee photos={bubbles.slice().reverse()} />}
+    </div>
   );
 }
 
@@ -737,7 +766,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       const pic = q.answers.find(a => a.photo);
       const memo = q.answers.find(a => a.memo);
       return (
-        <div className="screen"><div className="inner">
+        <div className="screen"><div className="inner fade" key={idx}>
           {bar}
           <div className="quizHeader">{q.header}</div>
           <div className="quizQ">{q.text}</div>
@@ -768,7 +797,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     // ---- 写真を選ぶ問題（質問・タイトルから／時間から） ----
     const r = q.record;
     return (
-      <div className="screen"><div className="inner">
+      <div className="screen"><div className="inner fade" key={idx}>
         {bar}
         <div className="quizHeader">{q.header}</div>
         <div className="quizQ">{q.text}</div>
@@ -876,7 +905,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v16</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v17</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
