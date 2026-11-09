@@ -843,7 +843,7 @@ function App() {
   const [focus, setFocus] = useState(null);
   const [fitKey, setFitKey] = useState(0);            // まとめて追加のあと地図を動かす合図
   const [screen, setScreen] = useState('home');   // 'home'（タイトル）| 'register'（登録）| 'quiz'（クイズ）
-  const [tab, setTab] = useState('list');   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
+  const [tab, setTab] = useState('add');   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
   const [editingId, setEditingId] = useState(null);   // 編集中の記録のid
 
   // 状態が変わったら自動で保存
@@ -909,7 +909,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v19</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v18</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
