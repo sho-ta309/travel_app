@@ -191,3 +191,14 @@ html, .sidebar { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ===== 左の欄の切り替え（新規追加／記録一覧） ===== */
+[hidden] { display: none !important; }
+.tabs { display: flex; margin-top: 18px; border-bottom: 1px solid var(--line); position: sticky; top: -18px; z-index: 5; background: var(--paper); padding-top: 4px; }
+.tab { flex: 1; margin: 0; padding: 11px 6px; color: var(--muted); background: transparent; border: none; border-bottom: 3px solid transparent; border-radius: 0; font-family: var(--head); font-weight: 700; font-size: 15px; letter-spacing: .06em; }
+.tab:hover { background: #f1ece1; color: var(--navy); }
+.tab.on { color: var(--navy); border-bottom-color: var(--gold); }
+.tab .count { display: inline-block; margin-left: 6px; padding: 0 8px; font-family: var(--sans); font-size: 11px; font-weight: 500; line-height: 18px; border-radius: 9px; background: var(--line); color: var(--navy); }
+.tabPane { animation: fadeUp .3s ease both; }
+.empty { margin-top: 14px; padding: 20px 14px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; }
+.empty .ghost { display: block; margin: 10px auto 0; }

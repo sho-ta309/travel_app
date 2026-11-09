@@ -843,6 +843,7 @@ function App() {
   const [focus, setFocus] = useState(null);
   const [fitKey, setFitKey] = useState(0);            // まとめて追加のあと地図を動かす合図
   const [screen, setScreen] = useState('home');   // 'home'（タイトル）| 'register'（登録）| 'quiz'（クイズ）
+  const [tab, setTab] = useState('add');   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
   const [editingId, setEditingId] = useState(null);   // 編集中の記録のid
 
   // 状態が変わったら自動で保存
@@ -884,9 +885,12 @@ function App() {
     Sound.play('save');
     setRecords(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r));
     setEditingId(null); setSelected(null);
+    setTab('list');   // 更新したら、一覧へ戻る
   }
-  function startEdit(id) { setSelected(null); setEditingId(id); setFocus({ id }); }
-  function cancelEdit() { setEditingId(null); setSelected(null); }
+  function startEdit(id) { setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }   // 編集は「新規追加」の欄のフォームを使う
+  function cancelEdit() { setEditingId(null); setSelected(null); setTab('list'); }
+  // 地図で場所を選んだら、「新規追加」の欄へ切り替える
+  function selectPlace(latlng) { setSelected(latlng); if (latlng) setTab('add'); }
   function deleteRecord(id) {
     Sound.play('delete');
     setRecords(prev => prev.filter(r => r.id !== id));
@@ -905,7 +909,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v17</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v18</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
@@ -914,20 +918,36 @@ function App() {
         </label>
         <button onClick={addTrip}>＋ 新しい旅行</button>
 
-        <h2>記録を追加</h2>
-        <RecordForm selected={selected} onAdd={addRecord}
-                    editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
-        <BulkImport onAdd={addRecords} selected={selected} />
+        <div className="tabs" role="tablist">
+          <button role="tab" aria-selected={tab === 'add'} className={'tab' + (tab === 'add' ? ' on' : '')}
+                  onClick={() => setTab('add')}>新規追加</button>
+          <button role="tab" aria-selected={tab === 'list'} className={'tab' + (tab === 'list' ? ' on' : '')}
+                  onClick={() => setTab('list')}>記録一覧<span className="count">{current.length}</span></button>
+        </div>
 
-        <h2>記録一覧（{current.length}件）</h2>
-        {current.map(r => (
-          <RecordCard key={r.id} record={r} isEditing={r.id === editingId}
-                      onFocus={id => setFocus({ id })} onEdit={startEdit} onDelete={deleteRecord} />
-        ))}
+        {/* どちらの欄も、表示を切り替えるだけ（入力の途中の内容が消えないように） */}
+        <div className="tabPane" hidden={tab !== 'add'}>
+          <RecordForm selected={selected} onAdd={addRecord}
+                      editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
+          <BulkImport onAdd={addRecords} selected={selected} />
+        </div>
+
+        <div className="tabPane" hidden={tab !== 'list'}>
+          {current.length === 0 && (
+            <div className="empty">
+              この旅行には、まだ記録がありません。
+              <button className="ghost" onClick={() => setTab('add')}>新規追加へ</button>
+            </div>
+          )}
+          {current.map(r => (
+            <RecordCard key={r.id} record={r} isEditing={r.id === editingId}
+                        onFocus={id => setFocus({ id })} onEdit={startEdit} onDelete={deleteRecord} />
+          ))}
+        </div>
         <p style={{ fontSize: 11, color: '#888' }}>場所の検索・地図：© OpenStreetMap contributors</p>
       </div>
       <MapView records={current} tripId={currentId} fitKey={fitKey}
-               selected={selected} onSelect={setSelected} focus={focus} />
+               selected={selected} onSelect={selectPlace} focus={focus} />
     </>
   );
 }
