@@ -417,9 +417,6 @@ function BulkImport({ onAdd, selected }) {
       <label>写真を選ぶ（複数選択できます）
         <input type="file" accept="image/*" multiple onChange={handleFiles} />
       </label>
-      <label>ファイルから選ぶ（Android向け）
-        <input type="file" multiple onChange={handleFiles} />
-      </label>
       <label>フォルダごと選ぶ（パソコンのみ）
         <input type="file" webkitdirectory="" multiple onChange={handleFiles} />
       </label>
@@ -488,14 +485,14 @@ function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
   return (
     <div className="screen"><div className="inner">
-      <h1 style={{ fontSize: 28 }}>🧳 旅行記録</h1>
-      <p>旅の思い出を、残して、思い出そう。<br />
+      <h1 style={{ fontSize: 28 }}>自分だけの旅行記録</h1>
+      <p>旅の思い出を残して思い出そう。<br />
         <small>旅行 {trips.length}件 ／ 記録 {records.length}件 ／ 写真 {photoCount}枚</small></p>
       <button className="homeBtn" onClick={() => onGo('register')}>
-        📍 記録する<small>地図と写真で、旅の記録を登録・編集</small>
+        旅行を記録する<small>地図と写真で、旅の記録を登録・編集</small>
       </button>
       <button className="homeBtn quiz" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
-        🎯 クイズに挑戦
+        旅行の記憶クイズに挑戦
         <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
       </button>
     </div></div>
@@ -543,7 +540,7 @@ function makeQuestions(pool, allPhotos, count, trips) {
     return {
       type: 'photo', record: r,
       header: tripHeader(trips, r.tripId) + ' ／ ' + r.date + (r.question ? ' ／ ' + r.title : ''),
-      text: r.question || '「' + r.title + '」の写真はどれ？',
+      text: r.question || '「' + r.title + '」の写真はどれでしょう？',
       choices: shuffle([r, ...[...same, ...diff].slice(0, 3)])
     };
   });
@@ -575,7 +572,7 @@ function makeTimePhotoQuestions(groups, allPhotos, trips, count, style) {
   });
 }
 
-function fmtDist(d) { return d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
+function fmtDist(d) { return d < 5000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
 // 答えの場所から、一番近い正解までの距離（正解が複数あるときは、近いほうで判定）
 function nearestDist(guess, answers) {
   return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
@@ -696,19 +693,19 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   if (phase === 'setup') return (
     <div className="screen"><div className="inner">
       <button style={{ ...grayBtn, width: 'auto' }} onClick={onExit}>← タイトルへ</button>
-      <h2>🎯 クイズ</h2>
+      <h2>旅の記憶クイズ</h2>
 
-      <label>出題する旅行（「すべての旅行」で、全部を混ぜて出題します）
+      <label>問題を出題する旅行（「すべての旅行」で全部を混ぜて出題します）
         <select value={tripSel} onChange={e => setTripSel(e.target.value)}>
           <option value="all">すべての旅行（混ぜる）</option>
           {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
         </select>
       </label>
 
-      <div style={{ marginTop: 10, fontSize: 13 }}>問題の種類（複数選ぶと、混ぜて出題します）</div>
-      {[['photo', '質問・タイトルから、写真を選ぶ'],
-        ['place', '時間から、いた場所を地図で選ぶ'],
-        ['timePhoto', '時間から、いた場所の写真を選ぶ']].map(([k, label]) => (
+      <div style={{ marginTop: 10, fontSize: 13 }}>問題の種類（複数選ぶと混ぜて出題します）</div>
+      {[['photo', '質問・タイトルから写真を選ぶ'],
+        ['place', '時間からその時に居た場所を"地図"で選ぶ'],
+        ['timePhoto', '時間からその時にいた場所の"写真"を選ぶ']].map(([k, label]) => (
         <label key={k}>
           <input type="checkbox" checked={kinds[k]} style={{ width: 'auto' }}
                  onChange={e => setKinds({ ...kinds, [k]: e.target.checked })} /> {label}
@@ -718,8 +715,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       {(kinds.place || kinds.timePhoto) && (
         <label>時間の聞き方
           <select value={timeStyle} onChange={e => setTimeStyle(e.target.value)}>
-            <option value="hour">時間帯（例：12時台）</option>
-            <option value="exact">ちょうどの時刻（例：12:30ごろ）</option>
+            <option value="hour">（大まかな時間 例:12時台）</option>
+            <option value="exact"> 細かな時刻（例：12:30頃）</option>
           </select>
         </label>
       )}
@@ -814,10 +811,10 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     <div className="screen"><div className="inner">
       <h2>結果</h2>
       <p style={{ fontSize: 28 }}>{score} / {qs.length} 問正解</p>
-      <p>{score === qs.length ? '全問正解！完璧な思い出力です 🎉' : score >= qs.length / 2 ? 'いい調子です！' : 'もう一度、思い出してみよう'}</p>
-      <button onClick={start}>もう一度（問題を作り直す）</button>
+      <p>{score === qs.length ? '全問正解！良い旅行になりましたね！' : score >= qs.length / 2 ? 'その調子！もっと記憶を掘り返してみよう！' : 'その旅行、意味ありました？覚えてない旅行は意味がなくなっちゃうよ。'}</p>
+      <button onClick={start}>もう一度挑戦（問題を作り直す）</button>
       <button style={grayBtn} onClick={() => setPhase('setup')}>設定に戻る</button>
-      <button style={grayBtn} onClick={onExit}>タイトルへ</button>
+      <button style={grayBtn} onClick={onExit}>タイトル画面に戻る</button>
     </div></div>
   );
 }
@@ -893,7 +890,7 @@ function App() {
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 style={{ background: '#888', marginTop: 0 }}>← タイトルへ</button>
         <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v15</small></h1>
-        <label>旅行を選ぶ
+        <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
             {tripData.trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
