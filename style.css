@@ -202,3 +202,33 @@ html, .sidebar { scroll-behavior: smooth; }
 .tabPane { animation: fadeUp .3s ease both; }
 .empty { margin-top: 14px; padding: 20px 14px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; }
 .empty .ghost { display: block; margin: 10px auto 0; }
+
+/* ===== 写真の拡大表示 ===== */
+@keyframes zoomIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+.bubble { cursor: pointer; transition: transform .2s; }
+.bubble:hover { transform: scale(1.07); }
+.record img.thumb { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(12, 21, 40, .78); animation: fadeIn .25s ease both; }
+.lightboxBody { position: relative; margin: 0; width: 100%; max-width: 720px; max-height: 92vh; overflow-y: auto; background: #fff; border-radius: 8px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); animation: zoomIn .3s ease both; }
+.lightboxBody img { display: block; width: 100%; max-height: 66vh; object-fit: contain; background: #0c1528; }
+.lightboxBody figcaption { padding: 14px 18px 18px; }
+.lightboxBody figcaption b { display: block; font-family: var(--head); font-size: 19px; letter-spacing: .03em; }
+.lightboxBody figcaption small { display: block; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.lightboxBody figcaption p { margin: 8px 0 0; white-space: pre-wrap; }
+.lightboxClose { position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; margin: 0; padding: 0; border: none; border-radius: 50%; font-size: 22px; line-height: 1; background: rgba(20, 33, 61, .65); }
+.lightboxClose:hover { background: rgba(20, 33, 61, .9); }
+
+/* ===== クイズの結果（正解の写真と地図） ===== */
+.score { font-family: var(--head); font-size: 30px; font-weight: 700; margin: 6px 0; }
+.subhead { font-family: var(--head); font-size: 15px; font-weight: 700; letter-spacing: .06em; margin: 22px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.resultRow { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 6px; animation: fadeUp .4s ease both; }
+.resultNo { flex: none; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--navy); color: #fff; font-size: 13px; font-weight: 700; }
+.resultRow .thumb { flex: none; width: 66px; height: 66px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(20, 33, 61, .25); cursor: zoom-in; }
+.resultRow .thumb.blank { background: var(--line); cursor: default; }
+.resultBody { min-width: 0; flex: 1; line-height: 1.6; }
+.resultBody small { color: var(--muted); }
+.resultMark { font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+.resultMark.ok { color: var(--ok); } .resultMark.ng { color: var(--danger); }
+.resultQ { font-weight: 500; }
+.pin.num span em { display: block; width: 100%; font-style: normal; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; color: #fff; transform: rotate(45deg); }
+.pin.num span::after { display: none; }

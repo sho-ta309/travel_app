@@ -446,8 +446,35 @@ function BulkImport({ onAdd, selected }) {
   );
 }
 
+// ---------- 部品：写真の拡大表示（写真と情報を、画面いっぱいに重ねて見せる） ----------
+function Lightbox({ record, tripName, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // createPortal：部品の位置に関係なく、画面全体（body）の上に描く
+  // ※ 押した操作が、下のカードなどに伝わらないよう、stopPropagation を使っている
+  return ReactDOM.createPortal(
+    <div className="lightbox" onClick={e => { e.stopPropagation(); onClose(); }}>
+      <figure className="lightboxBody" onClick={e => e.stopPropagation()}>
+        <button className="lightboxClose" aria-label="閉じる" onClick={e => { e.stopPropagation(); onClose(); }}>×</button>
+        <img src={record.photo} alt={record.title} />
+        <figcaption>
+          <b>{record.title}</b>
+          <small>{record.date}{record.time ? ' ' + record.time : ''}{tripName ? ' ／ ' + tripName : ''}</small>
+          {record.question && <small>問：{record.question}</small>}
+          {record.memo && <p>{record.memo}</p>}
+        </figcaption>
+      </figure>
+    </div>,
+    document.body
+  );
+}
+
 // ---------- 部品：記録1件のカード ----------
 function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
+  const [zoom, setZoom] = useState(false);   // 写真を拡大中か
   const [gone, setGone] = useState(false);   // 削除するとき、先にふわっと消す
   function remove(e) {
     e.stopPropagation();
@@ -457,8 +484,10 @@ function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
   }
   return (
     <div className={'record' + (isEditing ? ' editing' : '') + (gone ? ' gone' : '')} onClick={() => onFocus(record.id)}>
+      {zoom && <Lightbox record={record} onClose={() => setZoom(false)} />}
       <div className="recordRow">
-        {record.photo && <img className="thumb" src={record.photo} alt="" loading="lazy" decoding="async" />}
+        {record.photo && <img className="thumb" src={record.photo} alt="" loading="lazy" decoding="async"
+             onClick={e => { e.stopPropagation(); setZoom(true); }} />}
         <div className="recordBody">
           <b>{record.title}</b>
           <small>{record.date}{record.time ? ' ' + record.time : ''}</small>
@@ -474,14 +503,16 @@ function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
 }
 
 // ---------- 画面：タイトル（登録・クイズを選ぶ） ----------
-// 流れる丸い写真（タイトル画面の飾り）
-function Marquee({ photos, reverse }) {
+// 流れる丸い写真（タイトル画面）。タップすると、写真の情報が出る
+function Marquee({ items, reverse, onPick }) {
   const base = [];
-  while (base.length < 10) base.push(...photos);   // 写真が少ないときは、くり返して幅を埋める
+  while (base.length < 10) base.push(...items);   // 写真が少ないときは、くり返して幅を埋める
   return (
-    <div className={'marquee' + (reverse ? ' rev' : '')} aria-hidden="true">
+    <div className={'marquee' + (reverse ? ' rev' : '')}>
       <div className="marqueeTrack">
-        {[...base, ...base].map((p, i) => <img key={i} className="bubble" src={p} alt="" loading="lazy" decoding="async" />)}
+        {[...base, ...base].map((r, i) => (
+          <img key={i} className="bubble" src={r.photo} alt={r.title} loading="lazy" decoding="async" onClick={() => onPick(r)} />
+        ))}
       </div>
     </div>
   );
@@ -489,11 +520,13 @@ function Marquee({ photos, reverse }) {
 
 function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
+  const [view, setView] = useState(null);   // タップした写真の記録
   // 流す写真は最大8枚（スマホのメモリ対策）
-  const bubbles = useMemo(() => shuffle(records.filter(r => r.photo).map(r => r.photo)).slice(0, 8), [records]);
+  const bubbles = useMemo(() => shuffle(records.filter(r => r.photo)).slice(0, 8), [records]);
+  const trip = view && trips.find(t => t.id === view.tripId);
   return (
     <div className="screen home">
-      {bubbles.length > 0 && <Marquee photos={bubbles} reverse />}
+      {bubbles.length > 0 && <Marquee items={bubbles} reverse onPick={setView} />}
       <div className="inner">
         <div className="homeEyebrow">TRAVEL JOURNAL</div>
         <h1>自分だけの旅行記録</h1>
@@ -511,7 +544,8 @@ function Home({ trips, records, onGo }) {
           <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
         </button>
       </div>
-      {bubbles.length > 0 && <Marquee photos={bubbles.slice().reverse()} />}
+      {bubbles.length > 0 && <Marquee items={bubbles.slice().reverse()} onPick={setView} />}
+      {view && <Lightbox record={view} tripName={trip ? trip.name : ''} onClose={() => setView(null)} />}
     </div>
   );
 }
@@ -650,6 +684,29 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
   );
 }
 
+// ---------- 部品：結果の地図（正解の場所を、番号つきでまとめて表示） ----------
+function ResultMap({ points }) {
+  const divRef = useRef(null);
+  useEffect(() => {
+    const map = L.map(divRef.current).setView([36, 138], 5);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    const latlngs = [];
+    points.forEach(pt => {
+      const icon = L.divIcon({ className: 'pin num', html: '<span><em>' + pt.n + '</em></span>',
+                               iconSize: [24, 32], iconAnchor: [12, 30], tooltipAnchor: [12, -14] });
+      const tip = document.createElement('span');
+      tip.textContent = pt.n + '. ' + pt.title;   // textContent で入れる（タイトルに記号があっても安全）
+      L.marker([pt.lat, pt.lng], { icon }).addTo(map).bindTooltip(tip);
+      latlngs.push([pt.lat, pt.lng]);
+    });
+    if (latlngs.length) map.fitBounds(latlngs, { padding: [40, 40], maxZoom: 15 });
+    return () => map.remove();
+  }, []);
+  return <div className="guessMap"><div ref={divRef} style={{ position: 'absolute', inset: 0 }}></div></div>;
+}
+
 // ---------- 画面：クイズ ----------
 function Quiz({ records, trips, currentTripId, onExit }) {
   const [phase, setPhase] = useState('setup');   // setup → play → result
@@ -663,6 +720,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   const [guess, setGuess] = useState(null);      // 場所問題：地図で選んだ場所
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
+  const [results, setResults] = useState([]);   // 問題ごとの、正解・不正解（結果画面で使う）
+  const [lb, setLb] = useState(null);            // 結果画面で、拡大している写真の記録
 
   const inTrip = r => tripSel === 'all' || String(r.tripId) === tripSel;
   const withPhoto = records.filter(r => r.photo);
@@ -682,13 +741,14 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     if (kinds.place) list = list.concat(makePlaceQuestions(groups, trips, count, timeStyle));
     if (kinds.timePhoto) list = list.concat(makeTimePhotoQuestions(tpGroups, withPhoto, trips, count, timeStyle));
     setQs(shuffle(list).slice(0, count));   // 種類が混ざるように、シャッフルしてから切り出す
-    setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setPhase('play');
+    setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setResults([]); setPhase('play');
   }
   function answer(c) {   // 写真問題
     if (picked) return;
     setPicked(c.id);
     const ok = c.id === qs[idx].record.id;
     Sound.play(ok ? 'correct' : 'wrong');
+    setResults(r => [...r, ok]);
     if (ok) setScore(s => s + 1);
   }
   function submitGuess() {   // 場所問題
@@ -696,6 +756,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     setRevealed(true);
     const hit = nearestDist(guess, qs[idx].answers) <= HIT_M;
     Sound.play(hit ? 'correct' : 'wrong');
+    setResults(r => [...r, hit]);
     if (hit) setScore(s => s + 1);
   }
   function next() {
@@ -823,14 +884,40 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     );
   }
 
+  // ---- 結果：正解の写真と、場所の地図 ----
+  const rows = qs.map((q, i) => ({ n: i + 1, q, ok: results[i], recs: q.type === 'place' ? q.answers : [q.record] }));
+  const points = rows.flatMap(row => row.recs.filter(r => validLatLng(r.lat, r.lng)).map(r => ({ n: row.n, lat: r.lat, lng: r.lng, title: r.title })));
   return (
-    <div className="screen"><div className="inner">
+    <div className="screen"><div className="inner fade">
       <h2>結果</h2>
-      <p style={{ fontSize: 28 }}>{score} / {qs.length} 問正解</p>
+      <p className="score">{score} / {qs.length} 問正解</p>
       <p>{score === qs.length ? '全問正解！良い旅行になりましたね！' : score >= qs.length / 2 ? 'その調子！もっと記憶を掘り返してみよう！' : 'その旅行、意味ありました？覚えてない旅行は意味がなくなっちゃうよ。'}</p>
+
+      <h3 className="subhead">正解の場所（番号は問題の番号）</h3>
+      <ResultMap points={points} />
+
+      <h3 className="subhead">問題と、正解の写真（タップで拡大）</h3>
+      {rows.map(row => {
+        const r = row.recs.find(x => x.photo) || row.recs[0];
+        return (
+          <div className="resultRow" key={row.n}>
+            <span className="resultNo">{row.n}</span>
+            {r.photo
+              ? <img className="thumb" src={r.photo} alt="写真を大きく表示" onClick={() => setLb(r)} />
+              : <span className="thumb blank" />}
+            <div className="resultBody">
+              <div className={'resultMark ' + (row.ok ? 'ok' : 'ng')}>{row.ok ? '正解' : '不正解'}</div>
+              <div className="resultQ">{row.q.text}</div>
+              <small>{row.recs.map(x => x.title).join('、')} ／ {r.date}{r.time ? ' ' + r.time : ''}</small>
+            </div>
+          </div>
+        );
+      })}
+
       <button onClick={start}>もう一度挑戦（問題を作り直す）</button>
       <button className="ghost" onClick={() => setPhase('setup')}>設定に戻る</button>
       <button className="ghost" onClick={onExit}>タイトル画面に戻る</button>
+      {lb && <Lightbox record={lb} tripName={(trips.find(t => t.id === lb.tripId) || {}).name || ''} onClose={() => setLb(null)} />}
     </div></div>
   );
 }
@@ -909,7 +996,7 @@ function App() {
       <div className="sidebar">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v19</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v21</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
