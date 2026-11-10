@@ -18,7 +18,7 @@ body { margin: 0; font-size: 15px; line-height: 1.7; font-family: var(--sans); c
 #root { display: flex; height: 100vh; height: 100dvh; }   /* dvh：Safariのアドレスバー対策 */
 
 /* ===== 左の入力エリア ===== */
-.sidebar { width: 310px; padding: 18px 16px 70px; overflow-y: auto; background: var(--paper); border-right: 1px solid var(--line); }
+.sidebar { width: 310px; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); border-right: 1px solid var(--line); }
 .mapWrap { flex: 1; position: relative; min-height: 0; min-width: 0; }
 .mapWrap > .map { position: absolute; inset: 0; }
 
@@ -170,7 +170,7 @@ button.ghost:hover { border-color: var(--gold); background: #fff; }
 @keyframes pop { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.04); } }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 @keyframes flow { to { transform: translateX(-50%); } }
-html, .sidebar { scroll-behavior: smooth; }
+html, .sidebarBody { scroll-behavior: smooth; }
 .screen, .sidebar { animation: fadeIn .5s ease both; }
 .screen.home .inner > * { animation: fadeUp .7s ease both; }
 .screen.home .inner > :nth-child(2) { animation-delay: .06s; }
@@ -232,3 +232,20 @@ html, .sidebar { scroll-behavior: smooth; }
 .resultQ { font-weight: 500; }
 .pin.num span em { display: block; width: 100%; font-style: normal; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; color: #fff; transform: rotate(45deg); }
 .pin.num span::after { display: none; }
+
+/* ===== 左の欄の中身・スライドの取っ手 ===== */
+.sidebarBody { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px 70px; }
+.sheetHandle { display: none; }
+@media (max-width: 700px) {
+  .sidebar { transition: height .28s ease; border-radius: 16px 16px 0 0; }
+  .sidebarBody { padding-top: 6px; }
+  .tabs { top: -6px; }
+  .sheetHandle { display: flex; flex: none; justify-content: center; align-items: center; height: 30px; touch-action: none; cursor: grab; }
+  .sheetHandle span { width: 48px; height: 5px; border-radius: 3px; background: var(--gold-soft); }
+}
+@media (min-width: 701px) { .sidebar { height: auto !important; } }   /* パソコンでは、スライドの高さを使わない */
+
+/* ===== 順番（番号・日付の見出し） ===== */
+.dayLabel { margin: 18px 0 0; font-family: var(--head); font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--gold); }
+.recordNo { flex: none; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; }
+.popPhoto { cursor: zoom-in; }
