@@ -166,8 +166,8 @@ function orderRecords(list) {
   return sorted.map(r => ({ ...r, n: r.time ? ++n : null }));
 }
 // 番号つきのピン
-function numPin(n) {
-  return L.divIcon({ className: 'pin num', html: '<span><em>' + n + '</em></span>',
+function numPin(n, active) {
+  return L.divIcon({ className: 'pin num' + (active ? ' active' : ''), html: '<span><em>' + n + '</em></span>',
                      iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
 }
 
@@ -292,7 +292,7 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
       attribution: 'Tiles &copy; Esri', maxNativeZoom: 18, maxZoom: 21
     });
     osm.addTo(map);
-    L.control.layers({ 'OpenStreetMap': osm, '航空写真（日本）': photo, '衛星写真（世界）': world }).addTo(map);
+    L.control.layers({ 'OpenStreetMap': osm, '航空写真（日本）': photo, '衛星写真（世界）': world }, null, { position: 'bottomleft' }).addTo(map);
     groupRef.current = L.layerGroup().addTo(map);
     map.on('click', e => { Sound.play('pin'); onSelect(e.latlng); });
     mapRef.current = map;
@@ -696,7 +696,7 @@ function makeQuestions(pool, allPhotos, count, trips) {
 // ② 時間から、いた場所を地図で選ぶ問題
 function makePlaceQuestions(groups, trips, count, style) {
   return shuffle(groups).slice(0, count).map(g => ({
-    type: 'place', answers: g.records,
+    type: 'place', answers: g.records, circle: hintCircle(g.records[0]),
     header: tripHeader(trips, g.tripId),
     text: g.date + ' の ' + slotLabel(g, style) + '、どこにいた？'
   }));
@@ -725,9 +725,38 @@ function nearestDist(guess, answers) {
   return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
 }
 
+// 「場所の範囲」のヒント：正解が入るが、中心ではない円（正解がばれないように、中心をずらす）
+function hintCircle(r) {
+  const ang = Math.random() * 2 * Math.PI, off = 1500 * (0.4 + 0.6 * Math.random());   // 中心を、最大1.5kmずらす
+  return {
+    lat: r.lat + (off * Math.cos(ang)) / 111320,
+    lng: r.lng + (off * Math.sin(ang)) / (111320 * Math.cos(r.lat * Math.PI / 180)),
+    r: 4000   // 半径4km
+  };
+}
+
+// 問題ごとのヒント（上から順に、見せていく）
+function makeHints(q) {
+  const out = [];
+  if (q.type === 'place') {
+    const memo = q.answers.find(x => x.memo), pic = q.answers.find(x => x.photo);
+    if (memo) out.push({ kind: 'text', label: 'メモ', text: memo.memo });
+    out.push({ kind: 'circle', label: '場所の範囲' });
+    if (pic) out.push({ kind: 'photo', label: '写真', photo: pic.photo });
+    out.push({ kind: 'text', label: '場所の名前', text: q.answers.map(x => x.title).join('、') });
+  } else {
+    const r = q.record, seen = q.text + q.header;
+    if (r.time && !seen.includes(r.time)) out.push({ kind: 'text', label: '時刻', text: r.time });
+    if (r.memo) out.push({ kind: 'text', label: 'メモ', text: r.memo });
+    if (!seen.includes(r.title)) out.push({ kind: 'text', label: 'タイトル', text: r.title });
+    if (q.choices.length >= 3) out.push({ kind: 'fifty', label: '選択肢を減らす' });
+  }
+  return out;
+}
+
 // ---------- 部品：答えの場所を選ぶ地図 ----------
-function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
-  const divRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null);
+function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
+  const divRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null), hintRef = useRef(null);
   const onGuessRef = useRef(onGuess);
   onGuessRef.current = onGuess;   // いつも最新の関数を使えるようにしておく
 
@@ -736,6 +765,7 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
+    hintRef.current = L.layerGroup().addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     if (startPts.length) map.fitBounds(startPts, { padding: [30, 30], maxZoom: 12 });
     map.on('click', e => { Sound.play('pin'); onGuessRef.current(e.latlng); });
@@ -761,6 +791,16 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
     }
   }, [guess, revealed, ansKey]);
 
+  // ヒント：答えが入っている範囲の円（円の上をタップしても、答えを選べます）
+  const hintKey = hintCircle ? hintCircle.lat + ',' + hintCircle.lng : '';
+  useEffect(() => {
+    const g = hintRef.current;
+    g.clearLayers();
+    if (!hintCircle) return;
+    const c = L.circle([hintCircle.lat, hintCircle.lng], { radius: hintCircle.r, color: '#b08a52', weight: 2, dashArray: '6 6', fillOpacity: 0.12, interactive: false }).addTo(g);
+    mapRef.current.flyToBounds(c.getBounds(), { padding: [30, 30], duration: 0.8 });
+  }, [hintKey]);
+
   // 検索バーで見つけた場所へ地図を動かすだけ（答えにはならない）
   function flyTo(p) {
     const map = mapRef.current;
@@ -781,8 +821,8 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts }) {
 }
 
 // ---------- 部品：結果の地図（正解の場所を、番号つきでまとめて表示） ----------
-function ResultMap({ points }) {
-  const divRef = useRef(null);
+function ResultMap({ points, active }) {
+  const divRef = useRef(null), mapRef = useRef(null), markersRef = useRef([]);
   useEffect(() => {
     const map = L.map(divRef.current).setView([36, 138], 5);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -790,16 +830,34 @@ function ResultMap({ points }) {
     }).addTo(map);
     const latlngs = [];
     points.forEach(pt => {
-      const icon = L.divIcon({ className: 'pin num', html: '<span><em>' + pt.n + '</em></span>',
-                               iconSize: [24, 32], iconAnchor: [12, 30], tooltipAnchor: [12, -14] });
       const tip = document.createElement('span');
       tip.textContent = pt.n + '. ' + pt.title;   // textContent で入れる（タイトルに記号があっても安全）
-      L.marker([pt.lat, pt.lng], { icon }).addTo(map).bindTooltip(tip);
+      const m = L.marker([pt.lat, pt.lng], { icon: numPin(pt.n) }).addTo(map).bindTooltip(tip);
+      markersRef.current.push({ n: pt.n, m });
       latlngs.push([pt.lat, pt.lng]);
     });
     if (latlngs.length) map.fitBounds(latlngs, { padding: [40, 40], maxZoom: 15 });
-    return () => map.remove();
+    mapRef.current = map;
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(divRef.current);
+    return () => { ro.disconnect(); map.remove(); };
   }, []);
+
+  // 問題がタップされたら：その問題のピンを大きく光らせ、地図をそこへ動かす
+  useEffect(() => {
+    if (!active) return;
+    const map = mapRef.current;
+    const hit = markersRef.current.filter(x => x.n === active.n);
+    markersRef.current.forEach(x => {
+      const on = x.n === active.n;
+      x.m.setIcon(numPin(x.n, on));
+      x.m.setZIndexOffset(on ? 1000 : 0);
+    });
+    divRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });   // 地図が見える位置まで、画面を動かす
+    if (hit.length === 1) { map.flyTo(hit[0].m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 1 }); hit[0].m.openTooltip(); }
+    else if (hit.length > 1) map.flyToBounds(hit.map(x => x.m.getLatLng()), { padding: [50, 50], maxZoom: 16, duration: 1 });
+  }, [active]);
+
   return <div className="guessMap"><div ref={divRef} style={{ position: 'absolute', inset: 0 }}></div></div>;
 }
 
@@ -817,6 +875,9 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
   const [results, setResults] = useState([]);   // 問題ごとの、正解・不正解（結果画面で使う）
+  const [hintLevel, setHintLevel] = useState(0);   // いま見せているヒントの数
+  const [hintLog, setHintLog] = useState([]);       // 問題ごとの、使ったヒントの数
+  const [active, setActive] = useState(null);       // 結果画面で、強調している問題
   const [lb, setLb] = useState(null);            // 結果画面で、拡大している写真の記録
 
   const inTrip = r => tripSel === 'all' || String(r.tripId) === tripSel;
@@ -837,7 +898,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     if (kinds.place) list = list.concat(makePlaceQuestions(groups, trips, count, timeStyle));
     if (kinds.timePhoto) list = list.concat(makeTimePhotoQuestions(tpGroups, withPhoto, trips, count, timeStyle));
     setQs(shuffle(list).slice(0, count));   // 種類が混ざるように、シャッフルしてから切り出す
-    setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setResults([]); setPhase('play');
+    setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setResults([]); setHintLog([]); setHintLevel(0); setActive(null); setPhase('play');
   }
   function answer(c) {   // 写真問題
     if (picked) return;
@@ -845,6 +906,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     const ok = c.id === qs[idx].record.id;
     Sound.play(ok ? 'correct' : 'wrong');
     setResults(r => [...r, ok]);
+    setHintLog(h => [...h, hintLevel]);
     if (ok) setScore(s => s + 1);
   }
   function submitGuess() {   // 場所問題
@@ -853,6 +915,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     const hit = nearestDist(guess, qs[idx].answers) <= HIT_M;
     Sound.play(hit ? 'correct' : 'wrong');
     setResults(r => [...r, hit]);
+    setHintLog(h => [...h, hintLevel]);
     if (hit) setScore(s => s + 1);
   }
   function next() {
@@ -860,7 +923,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       if (score >= qs.length / 2) Sound.play('finish');   // 半分以上正解で、ファンファーレ
       setPhase('result'); return;
     }
-    setIdx(idx + 1); setPicked(null); setGuess(null); setRevealed(false);
+    setIdx(idx + 1); setPicked(null); setGuess(null); setRevealed(false); setHintLevel(0);
   }
 
   if (phase === 'setup') return (
@@ -915,6 +978,28 @@ function Quiz({ records, trips, currentTripId, onExit }) {
 
   if (phase === 'play') {
     const q = qs[idx];
+    const hints = makeHints(q);
+    const answered = q.type === 'place' ? revealed : !!picked;
+    const shown = hints.slice(0, hintLevel);
+    const fiftyOn = shown.some(h => h.kind === 'fifty');
+    const circleOn = shown.some(h => h.kind === 'circle');
+    const elimIds = q.type === 'photo' ? q.choices.filter(c => c.id !== q.record.id).slice(0, 2).map(c => c.id) : [];
+    const hintUI = (
+      <div className="hintArea">
+        <button className="hintBtn" disabled={answered || hintLevel >= hints.length} onClick={() => setHintLevel(l => l + 1)}>
+          {hintLevel >= hints.length ? 'ヒントは、すべて表示しました' : 'ヒントを見る（あと' + (hints.length - hintLevel) + '回）'}
+        </button>
+        {shown.map((h, i) => (
+          <div className="hintItem" key={i}>
+            <span className="hintLabel">ヒント{i + 1}：{h.label}</span>
+            {h.kind === 'text' && <span>{h.text}</span>}
+            {h.kind === 'photo' && <img className="hintPhoto" src={h.photo} alt="" />}
+            {h.kind === 'circle' && <span>地図の円の中に、答えがあります</span>}
+            {h.kind === 'fifty' && <span>違う写真を、2枚薄くしました</span>}
+          </div>
+        ))}
+      </div>
+    );
     const bar = <div className="quizHeader">第{idx + 1}問 / {qs.length}　正解 {score}</div>;
 
     // ---- 時間から、いた場所を選ぶ問題 ----
@@ -927,8 +1012,9 @@ function Quiz({ records, trips, currentTripId, onExit }) {
           {bar}
           <div className="quizHeader">{q.header}</div>
           <div className="quizQ">{q.text}</div>
+          {hintUI}
           <div className="guessMap">
-            <GuessMap key={idx} guess={guess} revealed={revealed} answers={q.answers}
+            <GuessMap key={idx} hintCircle={circleOn ? q.circle : null} guess={guess} revealed={revealed} answers={q.answers}
                       startPts={groups.flatMap(g => g.records.map(x => [x.lat, x.lng]))}
                       onGuess={g => { if (!revealed) setGuess(g); }} />
           </div>
@@ -958,6 +1044,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
         {bar}
         <div className="quizHeader">{q.header}</div>
         <div className="quizQ">{q.text}</div>
+          {hintUI}
         <div className="quizGrid">
           {q.choices.map(c => {
             let cls = 'choice';
@@ -965,7 +1052,9 @@ function Quiz({ records, trips, currentTripId, onExit }) {
               if (c.id === r.id) cls += ' correct';
               else if (c.id === picked) cls += ' wrong';
             }
-            return <button key={c.id} className={cls} data-silent="1" onClick={() => answer(c)}><img src={c.photo} /></button>;
+            const out = fiftyOn && elimIds.includes(c.id);
+            if (out) cls += ' out';
+            return <button key={c.id} disabled={out} className={cls} data-silent="1" onClick={() => answer(c)}><img src={c.photo} /></button>;
           })}
         </div>
         {picked && (
@@ -981,7 +1070,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   }
 
   // ---- 結果：正解の写真と、場所の地図 ----
-  const rows = qs.map((q, i) => ({ n: i + 1, q, ok: results[i], recs: q.type === 'place' ? q.answers : [q.record] }));
+  const rows = qs.map((q, i) => ({ n: i + 1, q, ok: results[i], hints: hintLog[i] || 0, recs: q.type === 'place' ? q.answers : [q.record] }));
   const points = rows.flatMap(row => row.recs.filter(r => validLatLng(r.lat, r.lng)).map(r => ({ n: row.n, lat: r.lat, lng: r.lng, title: r.title })));
   return (
     <div className="screen"><div className="inner fade">
@@ -989,20 +1078,22 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       <p className="score">{score} / {qs.length} 問正解</p>
       <p>{score === qs.length ? '全問正解！良い旅行になりましたね！' : score >= qs.length / 2 ? 'その調子！もっと記憶を掘り返してみよう！' : 'その旅行、意味ありました？覚えてない旅行は意味がなくなっちゃうよ。'}</p>
 
-      <h3 className="subhead">正解の場所（番号は問題の番号）</h3>
-      <ResultMap points={points} />
+      <h3 className="subhead">正解の場所</h3>
+      <ResultMap points={points} active={active} />
 
-      <h3 className="subhead">問題と、正解の写真（タップで拡大）</h3>
+      <h3 className="subhead">問題と、正解の写真（問題をタップすると、地図で強調します）</h3>
       {rows.map(row => {
         const r = row.recs.find(x => x.photo) || row.recs[0];
         return (
-          <div className="resultRow" key={row.n}>
+          <div className={'resultRow' + (active && active.n === row.n ? ' active' : '')} key={row.n}
+               onClick={() => setActive({ n: row.n, t: Date.now() })}>
             <span className="resultNo">{row.n}</span>
             {r.photo
-              ? <img className="thumb" src={r.photo} alt="写真を大きく表示" onClick={() => setLb(r)} />
+              ? <img className="thumb" src={r.photo} alt="写真を大きく表示" onClick={e => { e.stopPropagation(); setLb(r); }} />
               : <span className="thumb blank" />}
             <div className="resultBody">
-              <div className={'resultMark ' + (row.ok ? 'ok' : 'ng')}>{row.ok ? '正解' : '不正解'}</div>
+              <div className={'resultMark ' + (row.ok ? 'ok' : 'ng')}>{row.ok ? '正解' : '不正解'}
+                {row.hints > 0 && <span className="hintTag">ヒント{row.hints}回</span>}</div>
               <div className="resultQ">{row.q.text}</div>
               <small>{row.recs.map(x => x.title).join('、')} ／ {r.date}{r.time ? ' ' + r.time : ''}</small>
             </div>
@@ -1010,9 +1101,13 @@ function Quiz({ records, trips, currentTripId, onExit }) {
         );
       })}
 
-      <button onClick={start}>もう一度挑戦（問題を作り直す）</button>
-      <button className="ghost" onClick={() => setPhase('setup')}>設定に戻る</button>
-      <button className="ghost" onClick={onExit}>タイトル画面に戻る</button>
+      <div className="resultActions">
+        <button className="bigBtn" onClick={start}>もう一度挑戦（問題を作り直す）</button>
+        <div className="resultActions2">
+          <button className="bigBtn ghost" onClick={() => setPhase('setup')}>設定に戻る</button>
+          <button className="bigBtn ghost" onClick={onExit}>タイトル画面に戻る</button>
+        </div>
+      </div>
       {lb && <Lightbox record={lb} tripName={(trips.find(t => t.id === lb.tripId) || {}).name || ''} onClose={() => setLb(null)} />}
     </div></div>
   );
@@ -1021,7 +1116,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
 // ---------- スマホ：左の欄（操作バー）を、上下にスライドする取っ手 ----------
 function SheetHandle({ targetRef }) {
   const drag = useRef(null);
-  const snaps = () => { const H = window.innerHeight; return [76, H * 0.48, H * 0.92]; };   // 小さく／半分／大きく
+  const snaps = () => { const H = window.innerHeight; return [76, H * 0.48, Math.max(H * 0.6, Math.min(H * 0.86, H - 150))];   // 一番上は、検索バーが見える高さまで
+   };   // 小さく／半分／大きく
   function down(e) {
     drag.current = { y: e.clientY, h: targetRef.current.offsetHeight };
     targetRef.current.style.transition = 'none';   // ドラッグ中は、指に合わせて動かす
@@ -1110,7 +1206,12 @@ function App() {
     setEditingId(null); setSelected(null);
     setTab('list');   // 更新したら、一覧へ戻る
   }
-  function startEdit(id) { setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }   // 編集は「新規追加」の欄のフォームを使う
+  // スマホで操作バーが小さいとき、編集フォームが見える高さまで広げる
+  function expandSheet() {
+    const el = sidebarRef.current;
+    if (el && window.matchMedia('(max-width: 700px)').matches && el.offsetHeight < window.innerHeight * 0.45) el.style.height = Math.round(window.innerHeight * 0.6) + 'px';
+  }
+  function startEdit(id) { expandSheet(); setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }   // 編集は「新規追加」の欄のフォームを使う
   function cancelEdit() { setEditingId(null); setSelected(null); setTab('list'); }
   // 地図で場所を選んだら、「新規追加」の欄へ切り替える
   function selectPlace(latlng) { setSelected(latlng); if (latlng) setTab('add'); }
@@ -1135,7 +1236,7 @@ function App() {
         <div className="sidebarBody">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v22</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v23</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
