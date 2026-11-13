@@ -21,11 +21,12 @@ const Sound = (() => {
     return ctx;
   }
   // 1つの音：周波数(Hz)、開始までの秒数、長さ(秒)、波形、音量(0〜1)
-  function tone(c, freq, at, dur, type, vol) {
+  function tone(c, freq, at, dur, type, vol, freq2) {
     const t0 = c.currentTime + at;
     const osc = c.createOscillator(), gain = c.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
+    if (freq2) osc.frequency.exponentialRampToValueAtTime(freq2, t0 + dur);   // 音の高さをなめらかに変える
     gain.gain.setValueAtTime(0.0001, t0);
     gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);   // なめらかに消す（プチッという雑音を防ぐ）
@@ -39,6 +40,9 @@ const Sound = (() => {
     select:  c => { tone(c, 740, 0, 0.07, 'triangle', 0.15); tone(c, 988, 0.06, 0.1, 'triangle', 0.15); },
     save:    c => { tone(c, 660, 0, 0.1, 'sine', 0.15); tone(c, 880, 0.09, 0.16, 'sine', 0.15); },
     delete:  c => tone(c, 300, 0, 0.14, 'triangle', 0.15),
+    open:    c => tone(c, 520, 0, 0.16, 'sine', 0.14, 900),        // 写真を拡大：上がる音
+    close:   c => tone(c, 900, 0, 0.14, 'sine', 0.12, 520),        // 拡大を閉じる：下がる音
+    move:    c => tone(c, 300, 0, 0.35, 'triangle', 0.1, 760),     // 地図の移動：すーっと上がる音
     correct: c => [523, 659, 784].forEach((f, i) => tone(c, f, i * 0.1, 0.22, 'sine', 0.18)),
     wrong:   c => { tone(c, 220, 0, 0.18, 'sawtooth', 0.1); tone(c, 165, 0.17, 0.3, 'sawtooth', 0.1); },
     finish:  c => [523, 659, 784, 1047].forEach((f, i) => tone(c, f, 0.12 + i * 0.12, 0.3, 'triangle', 0.16))
@@ -55,7 +59,7 @@ const Sound = (() => {
 
 // ボタンを押したときの音（ボタンに data-silent を付けると、この音は鳴らさない）
 document.addEventListener('click', e => {
-  const b = e.target.closest && e.target.closest('button');
+  const b = e.target.closest && e.target.closest('button, input[type="checkbox"], input[type="radio"], .leaflet-control-layers-toggle, .leaflet-control-zoom a');
   if (b && !b.disabled && !b.closest('[data-silent]')) Sound.play('click');
 });
 
@@ -344,13 +348,15 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     if (!m) return;
     const map = mapRef.current, target = m.getLatLng();
     const zoom = Math.max(map.getZoom(), 16);
-    if (map.getCenter().distanceTo(target) < 5 && map.getZoom() === zoom) { m.openPopup(); return; }
+    if (map.getCenter().distanceTo(target) < 5 && map.getZoom() === zoom) { Sound.play('select'); m.openPopup(); return; }
     map.once('moveend', () => m.openPopup());
+    Sound.play('move');
     map.flyTo(target, zoom, { duration: 1.5 });
   }, [focus]);
 
   // 検索結果を選んだとき
   function handlePick(p) {
+    Sound.play('move');
     const map = mapRef.current;
     if (p.boundingbox) {
       const bb = p.boundingbox.map(Number);   // [南, 北, 西, 東]
@@ -451,6 +457,7 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel }) {
 function BulkImport({ onAdd, selected }) {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [pick, setPick] = useState({});   // 場所を設定する写真に選んだもの（key → true）
 
   async function handleFiles(e) {
     let files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
@@ -482,6 +489,7 @@ function BulkImport({ onAdd, selected }) {
   const ok = items.filter(i => validLatLng(i.lat, i.lng) && i.photo);       // 位置情報あり
   const noGps = items.filter(i => !validLatLng(i.lat, i.lng) && i.photo);   // 位置情報なし
   const broken = items.filter(i => !i.photo).length;
+  const chosen = noGps.filter(i => pick[i.key]);   // 選んだ、位置情報のない写真
 
   function toRecords(list, lat, lng) {
     return list.map((i, n) => ({
@@ -493,9 +501,10 @@ function BulkImport({ onAdd, selected }) {
     onAdd(toRecords(ok));
     setItems(items.filter(i => !ok.includes(i)));
   }
-  function importToSelected() {   // 位置情報のない写真を、地図で選んだ場所へ
-    onAdd(toRecords(noGps, selected.lat, selected.lng));
-    setItems(items.filter(i => !noGps.includes(i)));
+  function importToSelected() {   // 選んだ写真だけを、地図で選んだ場所へ（残りは、別の場所を選んで、くり返せる）
+    onAdd(toRecords(chosen, selected.lat, selected.lng));
+    setItems(items.filter(i => !chosen.includes(i)));
+    setPick({});
   }
 
   return (
@@ -516,15 +525,32 @@ function BulkImport({ onAdd, selected }) {
                  onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
           <small>{i.date}{i.time ? ' ' + i.time : ''}{i.dateFromExif ? '（撮影日時）' : '（ファイルの更新日）'}</small><br />
           <small className={validLatLng(i.lat, i.lng) ? 'tag ok' : 'tag ng'}>{validLatLng(i.lat, i.lng) ? '位置情報あり' : '位置情報なし'}</small>
+          {!validLatLng(i.lat, i.lng) && i.photo && (
+            <label className="pickRow">
+              <input type="checkbox" checked={!!pick[i.key]} onChange={e => setPick({ ...pick, [i.key]: e.target.checked })} />
+              この写真の場所を設定する
+            </label>
+          )}
         </div>
       ))}
 
       {ok.length > 0 && <button onClick={importAll}>位置情報のある{ok.length}件を記録する</button>}
-      {noGps.length > 0 && (selected
-        ? <button onClick={importToSelected}>位置情報のない{noGps.length}件を、地図で選んだ場所に記録する</button>
-        : <div className="msg">位置情報のない{noGps.length}件は、地図をクリック（または検索）して場所を選ぶと、その場所にまとめて登録できます</div>)}
+      {noGps.length > 0 && (
+        <div className="pickBar">
+          <div className="pickInfo">位置情報のない写真：{noGps.length}件（選択中 {chosen.length}件）</div>
+          <div className="pickBtns">
+            <button className="ghost" onClick={() => setPick(Object.fromEntries(noGps.map(i => [i.key, true])))}>すべて選ぶ</button>
+            <button className="ghost" onClick={() => setPick({})}>選択を外す</button>
+          </div>
+          {chosen.length === 0
+            ? <div className="msg">場所を設定する写真を選んでください。1枚ずつ設定するときは、1枚だけ選んで、地図で場所を選び、記録します。これをくり返します</div>
+            : selected
+              ? <button onClick={importToSelected}>選んだ{chosen.length}件を、地図で選んだ場所に記録する</button>
+              : <div className="msg">選んだ{chosen.length}件の場所を、地図をクリック（または検索）して選んでください</div>}
+        </div>
+      )}
       {broken > 0 && <div className="msg">{broken}件は、読み込めない形式のため登録できません</div>}
-      {items.length > 0 && <button className="ghost" onClick={() => setItems([])}>一覧を閉じる</button>}
+      {items.length > 0 && <button className="ghost" onClick={() => { setItems([]); setPick({}); }}>一覧を閉じる</button>}
     </div>
   );
 }
@@ -536,6 +562,7 @@ function Lightbox({ record, tripName, onClose }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  useEffect(() => { Sound.play('open'); return () => Sound.play('close'); }, []);   // 開いたとき・閉じたときの音
   // 高画質版（この端末のIndexedDB）があれば、読み込んで差し替える
   const [src, setSrc] = useState(record.photo);
   const [hq, setHq] = useState(null);   // null：確認中 / true：高画質 / false：高画質版なし
@@ -679,8 +706,10 @@ function timeGroups(records, style) {
 function slotLabel(g, style) { return style === 'hour' ? Number(g.slot) + '時台' : g.slot + ' ごろ'; }
 
 // ① 質問・タイトルから、写真を選ぶ問題
-function makeQuestions(pool, allPhotos, count, trips) {
-  return shuffle(pool).slice(0, count).map(r => {
+function makeQuestions(pool, allPhotos, count, trips, favCustom) {
+  // 自作の質問つきの記録を先に並べる（favCustom がオンのとき）
+  const base = favCustom ? [...shuffle(pool.filter(r => r.question)), ...shuffle(pool.filter(r => !r.question))] : shuffle(pool);
+  return base.slice(0, count).map(r => {
     const others = allPhotos.filter(x => x.id !== r.id && x.photo !== r.photo);
     const same = shuffle(others.filter(x => x.tripId === r.tripId));   // 同じ旅行の写真を優先
     const diff = shuffle(others.filter(x => x.tripId !== r.tripId));
@@ -723,6 +752,15 @@ function fmtDist(d) { return d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixe
 // 答えの場所から、一番近い正解までの距離（正解が複数あるときは、近いほうで判定）
 function nearestDist(guess, answers) {
   return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
+}
+
+// 自作の質問つきで、写真のない記録：質問を出して、答えの場所を地図で選んでもらう
+function makeCustomPlaceQuestions(pool, trips, count) {
+  return shuffle(pool).slice(0, count).map(r => ({
+    type: 'place', custom: true, answers: [r], circle: hintCircle(r),
+    header: tripHeader(trips, r.tripId) + ' ／ ' + r.date,
+    text: r.question + '（答えの場所を、地図で選んでください）'
+  }));
 }
 
 // 「場所の範囲」のヒント：正解が入るが、中心ではない円（正解がばれないように、中心をずらす）
@@ -803,6 +841,7 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
 
   // 検索バーで見つけた場所へ地図を動かすだけ（答えにはならない）
   function flyTo(p) {
+    Sound.play('move');
     const map = mapRef.current;
     if (p.boundingbox) {
       const bb = p.boundingbox.map(Number);
@@ -846,6 +885,7 @@ function ResultMap({ points, active }) {
   // 問題がタップされたら：その問題のピンを大きく光らせ、地図をそこへ動かす
   useEffect(() => {
     if (!active) return;
+    Sound.play('move');
     const map = mapRef.current;
     const hit = markersRef.current.filter(x => x.n === active.n);
     markersRef.current.forEach(x => {
@@ -868,6 +908,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   const [timeStyle, setTimeStyle] = useState('hour');   // 'hour'＝12時台 / 'exact'＝12:30ごろ
   const [tripSel, setTripSel] = useState('all');        // 'all'＝すべての旅行を混ぜる / 旅行のid
   const [count, setCount] = useState(5);
+  const [favCustom, setFavCustom] = useState(true);   // 自作の質問を優先する
   const [qs, setQs] = useState([]);
   const [idx, setIdx] = useState(0);
   const [picked, setPicked] = useState(null);    // 写真問題：選んだ記録のid
@@ -883,6 +924,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   const inTrip = r => tripSel === 'all' || String(r.tripId) === tripSel;
   const withPhoto = records.filter(r => r.photo);
   const photoPool = withPhoto.filter(inTrip);
+  const myQ = records.filter(r => inTrip(r) && r.question);                                       // 自作の質問つきの記録
+  const customPlace = myQ.filter(r => !r.photo && validLatLng(r.lat, r.lng));                     // うち、写真がないもの
   const groups = timeGroups(records.filter(inTrip), timeStyle);
   // 「時間から写真」：その時間帯に写真があり、ほかに選択肢にできる写真もあるもの
   const tpGroups = groups.filter(g => {
@@ -890,14 +933,18 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     return n > 0 && withPhoto.length > n;
   });
   const usePhoto = kinds.photo && withPhoto.length >= 2;
-  const available = (usePhoto ? photoPool.length : 0) + (kinds.place ? groups.length : 0) + (kinds.timePhoto ? tpGroups.length : 0);
+  const available = (usePhoto ? photoPool.length : 0) + (kinds.place ? groups.length : 0) + (kinds.timePhoto ? tpGroups.length : 0) + (kinds.photo ? customPlace.length : 0);
 
   function start() {
     let list = [];
-    if (usePhoto) list = list.concat(makeQuestions(photoPool, withPhoto, count, trips));
+    if (usePhoto) list = list.concat(makeQuestions(photoPool, withPhoto, count, trips, favCustom));
+    if (kinds.photo) list = list.concat(makeCustomPlaceQuestions(customPlace, trips, count));
     if (kinds.place) list = list.concat(makePlaceQuestions(groups, trips, count, timeStyle));
     if (kinds.timePhoto) list = list.concat(makeTimePhotoQuestions(tpGroups, withPhoto, trips, count, timeStyle));
-    setQs(shuffle(list).slice(0, count));   // 種類が混ざるように、シャッフルしてから切り出す
+    // 自作の質問は、必ず先に選ぶ。残りの枠を、ほかの問題で埋める
+    const mine = favCustom ? list.filter(x => x.custom || (x.type === 'photo' && x.record.question)) : [];
+    const others = shuffle(list.filter(x => !mine.includes(x)));
+    setQs(shuffle([...shuffle(mine), ...others].slice(0, count)));   // 最後にシャッフルして、種類を混ぜる
     setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setResults([]); setHintLog([]); setHintLevel(0); setActive(null); setPhase('play');
   }
   function answer(c) {   // 写真問題
@@ -957,6 +1004,12 @@ function Quiz({ records, trips, currentTripId, onExit }) {
         </label>
       )}
 
+      <label>
+        <input type="checkbox" checked={favCustom} style={{ width: 'auto' }} onChange={e => setFavCustom(e.target.checked)} /> 自分で作った質問を、優先して出題する
+      </label>
+      <p style={{ fontSize: 12, color: '#666', margin: '2px 0 0' }}>
+        自作の質問つきの記録：{myQ.length}件（うち写真なし{customPlace.length}件は、地図で場所を選ぶ問題になります）
+      </p>
       <label>問題数
         <select value={count} onChange={e => setCount(Number(e.target.value))}>
           {[3, 5, 10].map(n => <option key={n} value={n}>{n}問</option>)}
@@ -1015,7 +1068,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
           {hintUI}
           <div className="guessMap">
             <GuessMap key={idx} hintCircle={circleOn ? q.circle : null} guess={guess} revealed={revealed} answers={q.answers}
-                      startPts={groups.flatMap(g => g.records.map(x => [x.lat, x.lng]))}
+                      startPts={[...groups.flatMap(g => g.records.map(x => [x.lat, x.lng])), ...customPlace.map(x => [x.lat, x.lng])]}
                       onGuess={g => { if (!revealed) setGuess(g); }} />
           </div>
           {!revealed && (
@@ -1131,13 +1184,14 @@ function SheetHandle({ targetRef }) {
   }
   function up(e) {
     if (!drag.current) return;
-    const el = targetRef.current, moved = Math.abs(drag.current.y - e.clientY);
+    const el = targetRef.current, moved = Math.abs(drag.current.y - e.clientY), startH = drag.current.h;
     drag.current = null;
     el.style.transition = '';
     const sn = snaps(), cur = el.offsetHeight;
     let target = sn.reduce((a, b) => Math.abs(b - cur) < Math.abs(a - cur) ? b : a);   // いちばん近い高さに、ぴたっと止める
     if (moved < 6) target = target === sn[1] ? sn[2] : sn[1];                          // タップ：半分↔大きく
     el.style.height = target + 'px';
+    if (Math.abs(target - startH) > 20) Sound.play('move');   // 高さが変わったときの音
   }
   return (
     <div className="sheetHandle" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -1236,7 +1290,7 @@ function App() {
         <div className="sidebarBody">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v23</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v24</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
