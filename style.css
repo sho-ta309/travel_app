@@ -286,3 +286,42 @@ html, .sidebarBody { scroll-behavior: smooth; }
 .pickInfo { font-size: 13px; font-weight: 500; }
 .pickBtns { display: flex; gap: 8px; margin-top: 8px; }
 .pickBtns .ghost { flex: 1; }
+
+/* ===== データの保存・共有 ===== */
+.screen .inner.wide { max-width: 900px; }
+.dataNote { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.dataCard { padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 6px; line-height: 1.9; font-size: 14px; }
+.dataMsg { margin-top: 12px; padding: 10px 12px; background: #fffaf0; border-left: 3px solid var(--gold); border-radius: 3px; line-height: 1.7; }
+.ghost.fullw { width: 100%; margin-top: 8px; padding: 11px 14px; font-size: 14px; }
+.screen.home .inner > :nth-child(7) { animation-delay: .36s; }
+.screen.home .inner > :nth-child(8) { animation-delay: .42s; }
+
+/* ===== スライドショー ===== */
+.galleryTools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.galleryTools select, .galleryTools input { margin-top: 0; }
+.slideStage { position: relative; margin-top: 14px; overflow: hidden; border-radius: 10px; background: #0c1528; touch-action: pan-y; }
+.slideImg { display: block; width: 100%; height: 58vh; object-fit: contain; animation: fadeIn .7s ease both; }
+.slideCap { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 16px 12px; color: #fff; line-height: 1.6; background: linear-gradient(transparent, rgba(12, 21, 40, .85)); }
+.slideCap b { font-family: var(--head); font-size: 18px; }
+.slideCap span { display: block; font-size: 12px; opacity: .85; }
+.slideCap p { margin: 4px 0 0; font-size: 13px; }
+.slideNav { position: absolute; top: 50%; width: 44px; height: 44px; margin: -22px 0 0; padding: 0; border-radius: 50%; font-size: 26px; line-height: 1; background: rgba(20, 33, 61, .55); }
+.slideNav.prev { left: 10px; } .slideNav.next { right: 10px; }
+.slideBar { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.slideBar select, .slideBar button { width: auto; margin: 0; }
+.thumbGrid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.gthumb { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 2px 8px rgba(20, 33, 61, .25); cursor: pointer; opacity: .75; transition: transform .2s, opacity .2s, border-color .2s; }
+.gthumb:hover { opacity: 1; }
+.gthumb.on { opacity: 1; border-color: var(--gold); transform: scale(1.12); }
+@media (max-width: 700px) { .slideImg { height: 46vh; } .galleryTools { grid-template-columns: 1fr; } }
+
+/* ===== 検索 ===== */
+.searchRow { margin-top: 12px; }
+.searchRow input[type="search"] { margin-top: 0; }
+.inlineCheck { display: flex; align-items: center; margin-top: 8px; font-size: 13px; }
+.searchCount { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.chip { width: auto; margin: 6px 6px 0 0; padding: 5px 12px; font-size: 12px; letter-spacing: .02em; color: var(--navy); background: #fffaf0; border: 1px solid var(--gold); border-radius: 14px; }
+.chip:hover { background: #f4efe5; color: var(--navy); }
+.hitRow { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.hitRow .thumb { flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.hitRow small { display: block; color: var(--muted); }

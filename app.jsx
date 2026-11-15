@@ -175,6 +175,35 @@ function numPin(n, active) {
                      iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
 }
 
+// キーワードで記録を探す（空白で区切ると、すべての言葉を含む記録だけ）。タイトル・メモ・質問・日付・旅行名が対象
+function matchRecord(r, kw, trips) {
+  const words = (kw || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const t = trips.find(x => x.id === r.tripId);
+  const hay = [r.title, r.memo, r.question, r.date, r.time, t && t.name].join(' ').toLowerCase();
+  return words.every(w => hay.includes(w));
+}
+function blobToDataURL(blob) {
+  return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+}
+const LAST_BACKUP = 'travel-log-lastbackup';
+function daysSinceBackup() {   // 最後のバックアップから何日か（まだなら null）
+  const t = Number(localStorage.getItem(LAST_BACKUP) || 0);
+  return t ? Math.floor((Date.now() - t) / 86400000) : null;
+}
+// 高画質版があれば、それを返す（読み込み中や、なければ、保存済みの写真）
+function useHQ(record) {
+  const id = record ? record.id : null;
+  const [hq, setHq] = useState({ id: null, src: null });
+  useEffect(() => {
+    if (id === null) return;
+    let alive = true, url = null;
+    PhotoDB.get(id).then(b => { if (alive && b) { url = URL.createObjectURL(b); setHq({ id, src: url }); } });
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+  }, [id]);
+  return hq.id === id && hq.src ? hq.src : (record ? record.photo : null);
+}
+
 function readAndResize(file, maxW = 800) {
   return new Promise(resolve => {
     const url = URL.createObjectURL(file);
@@ -643,6 +672,7 @@ function Marquee({ items, reverse, onPick }) {
 
 function Home({ trips, records, onGo }) {
   const photoCount = records.filter(r => r.photo).length;
+  const days = daysSinceBackup();
   const [view, setView] = useState(null);   // タップした写真の記録
   // 流す写真は最大8枚（スマホのメモリ対策）
   const bubbles = useMemo(() => shuffle(records.filter(r => r.photo)).slice(0, 8), [records]);
@@ -665,6 +695,13 @@ function Home({ trips, records, onGo }) {
         <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
           <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
           <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
+        </button>
+        <button className="homeBtn" disabled={photoCount < 1} onClick={() => onGo('gallery')}>
+          <span className="homeBtnTitle">旅の写真をスライドショーで見る</span><small>旅ごとの写真を、順番に眺める</small>
+        </button>
+        <button className="homeBtn" onClick={() => onGo('data')}>
+          <span className="homeBtnTitle">データの保存・共有</span>
+          <small>{days === null ? 'まだバックアップがありません。ファイルに書き出して保管しましょう' : days >= 30 ? days + '日前にバックアップしました。そろそろ書き出しましょう' : '最後のバックアップ：' + (days === 0 ? '今日' : days + '日前')}</small>
         </button>
       </div>
       {bubbles.length > 0 && <Marquee items={bubbles.slice().reverse()} onPick={setView} />}
@@ -1166,6 +1203,170 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   );
 }
 
+// ---------- 画面：データの保存・共有（バックアップ） ----------
+function DataScreen({ trips, records, onImport, onExit }) {
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState('merge');   // 'merge'＝今の記録に追加 / 'replace'＝置き換え
+  const [usage, setUsage] = useState('');
+  const days = daysSinceBackup();
+  const recBytes = new Blob([localStorage.getItem(STORAGE_KEY) || '']).size;
+
+  useEffect(() => {
+    if (navigator.storage && navigator.storage.estimate) {
+      navigator.storage.estimate().then(e => setUsage('この端末での使用量：約' + (e.usage / 1048576).toFixed(1) + ' MB')).catch(() => {});
+    }
+  }, []);
+
+  // ファイルに書き出す（full：高画質の写真も含める）。写真を1枚ずつ文字にして、メモリを使いすぎないようにつなぐ
+  async function exportFile(full) {
+    setBusy(true); setMsg('書き出し中…（写真が多いと、時間がかかります）');
+    try {
+      const parts = ['{"app":"travel-log","version":1,"exportedAt":' + JSON.stringify(new Date().toISOString())
+        + ',"trips":' + JSON.stringify(trips) + ',"records":' + JSON.stringify(records) + ',"fulls":{'];
+      let first = true;
+      if (full) {
+        for (const r of records) {
+          const blob = r.photo ? await PhotoDB.get(r.id) : null;
+          if (!blob) continue;
+          parts.push((first ? '' : ',') + '"' + r.id + '":' + JSON.stringify(await blobToDataURL(blob)));
+          first = false;
+        }
+      }
+      parts.push('}}');
+      const url = URL.createObjectURL(new Blob(parts, { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'travel-log-' + toDateStr(new Date()) + (full ? '-full' : '') + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      localStorage.setItem(LAST_BACKUP, String(Date.now()));
+      setMsg('書き出しました。ダウンロードされたファイルを、大切に保管してください。');
+    } catch (e) { setMsg('書き出せませんでした：' + (e.message || e)); }
+    setBusy(false);
+  }
+
+  async function importFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (mode === 'replace' && !confirm('今の記録をすべて消して、ファイルの内容に置き換えます。よろしいですか？')) return;
+    setBusy(true); setMsg('読み込み中…');
+    try {
+      const data = JSON.parse(await file.text());
+      if (data.app !== 'travel-log' || !Array.isArray(data.records)) throw new Error('このアプリのバックアップファイルではありません');
+      const n = await onImport(data, mode);
+      setMsg(n + '件の記録を取り込みました。');
+    } catch (err) { setMsg('取り込めませんでした：' + (err.message || err)); }
+    setBusy(false);
+  }
+
+  return (
+    <div className="screen"><div className="inner fade">
+      <button className="ghost" onClick={onExit}>‹ タイトルへ</button>
+      <h2>データの保存・共有</h2>
+      <p className="dataNote">記録は、このブラウザの中だけに保存されています。ブラウザの不具合やデータの削除に備えて、ファイルに書き出して保管しておきましょう。</p>
+      <div className="dataCard">
+        <div>記録 {records.length}件 ／ 旅行 {trips.length}件</div>
+        <div>記録データ：約{(recBytes / 1048576).toFixed(2)} MB（上限の目安：約5MB）</div>
+        {usage && <div>{usage}</div>}
+        <div>最後のバックアップ：{days === null ? 'まだありません' : days === 0 ? '今日' : days + '日前'}</div>
+        {recBytes > 4 * 1048576 && <div className="msg">記録データが上限に近づいています。書き出して、不要な記録を整理してください。</div>}
+      </div>
+
+      <h3 className="subhead">書き出す（バックアップ・共有用）</h3>
+      <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（おすすめ）</button>
+      <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す（一覧用の写真のみ）</button>
+
+      <h3 className="subhead">取り込む（復元・ほかの人の記録を追加）</h3>
+      <label>取り込み方
+        <select value={mode} onChange={e => setMode(e.target.value)}>
+          <option value="merge">今の記録に追加する（同じ記録は、重複しません）</option>
+          <option value="replace">今の記録を消して、置き換える（復元用）</option>
+        </select>
+      </label>
+      <label>バックアップファイル（.json）
+        <input type="file" accept=".json,application/json" disabled={busy} onChange={importFile} />
+      </label>
+      {msg && <div className="dataMsg">{msg}</div>}
+
+      <h3 className="subhead">記録を共有するには</h3>
+      <p className="dataNote">書き出したファイルを、メールやクラウドなどで相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を見られます。リアルタイムに同期する共有には、別途サーバーが必要です。</p>
+    </div></div>
+  );
+}
+
+// ---------- 画面：旅の写真（スライドショーと一覧） ----------
+function Gallery({ records, trips, currentTripId, onExit }) {
+  const [tripSel, setTripSel] = useState(String(currentTripId));   // 'all' か旅行のid
+  const [kw, setKw] = useState('');
+  const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [sec, setSec] = useState(4);
+  const touchX = useRef(0);
+  // 日付・時刻の順に並べた、写真つきの記録
+  const list = useMemo(() => orderRecords(records.filter(r =>
+    r.photo && (tripSel === 'all' || String(r.tripId) === tripSel) && matchRecord(r, kw, trips))), [records, tripSel, kw]);
+  const n = list.length;
+  const cur = n ? list[Math.min(idx, n - 1)] : null;
+  const src = useHQ(cur);
+  const trip = cur && trips.find(t => t.id === cur.tripId);
+  const go = d => setIdx(i => (i + d + n) % n);
+
+  useEffect(() => { setIdx(0); }, [tripSel, kw]);
+  useEffect(() => {   // 自動で次の写真へ
+    if (!playing || n < 2) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % n), sec * 1000);
+    return () => clearInterval(t);
+  }, [playing, n, sec]);
+  useEffect(() => {   // キーボードの左右キー
+    const onKey = e => { if (n && e.key === 'ArrowRight') go(1); if (n && e.key === 'ArrowLeft') go(-1); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [n]);
+
+  return (
+    <div className="screen"><div className="inner wide fade">
+      <button className="ghost" onClick={onExit}>‹ タイトルへ</button>
+      <h2>旅の写真</h2>
+      <div className="galleryTools">
+        <select value={tripSel} onChange={e => setTripSel(e.target.value)}>
+          <option value="all">すべての旅行</option>
+          {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+        </select>
+        <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="キーワードで絞り込み（メモ・タイトルなど）" />
+      </div>
+      {n === 0 ? <p className="msg">条件に合う、写真つきの記録がありません</p> : (
+        <>
+          <div className="slideStage" onTouchStart={e => { touchX.current = e.touches[0].clientX; }}
+               onTouchEnd={e => { const d = e.changedTouches[0].clientX - touchX.current; if (Math.abs(d) > 50) go(d < 0 ? 1 : -1); }}>
+            <img key={cur.id} className="slideImg" src={src} alt={cur.title} />
+            <button className="slideNav prev" aria-label="前の写真" onClick={() => go(-1)}>‹</button>
+            <button className="slideNav next" aria-label="次の写真" onClick={() => go(1)}>›</button>
+            <div className="slideCap">
+              <b>{cur.n ? cur.n + '. ' : ''}{cur.title}</b>
+              <span>{cur.date}{cur.time ? ' ' + cur.time : ''}{trip ? ' ／ ' + trip.name : ''}</span>
+              {cur.memo && <p>{cur.memo}</p>}
+            </div>
+          </div>
+          <div className="slideBar">
+            <button className="ghost" onClick={() => setPlaying(p => !p)}>{playing ? '一時停止' : '再生'}</button>
+            <span>{Math.min(idx, n - 1) + 1} / {n}</span>
+            <select value={sec} onChange={e => setSec(Number(e.target.value))}>
+              {[3, 4, 6, 10].map(v => <option key={v} value={v}>{v}秒ごと</option>)}
+            </select>
+          </div>
+          <div className="thumbGrid">
+            {list.map((r, i) => (
+              <img key={r.id} className={'gthumb' + (i === idx ? ' on' : '')} src={r.photo} alt={r.title}
+                   onClick={() => { setIdx(i); setPlaying(false); }} />
+            ))}
+          </div>
+        </>
+      )}
+    </div></div>
+  );
+}
+
 // ---------- スマホ：左の欄（操作バー）を、上下にスライドする取っ手 ----------
 function SheetHandle({ targetRef }) {
   const drag = useRef(null);
@@ -1209,7 +1410,9 @@ function App() {
   const [screen, setScreen] = useState('home');   // 'home'（タイトル）| 'register'（登録）| 'quiz'（クイズ）
   const [tab, setTab] = useState('list');
   const [mapPhoto, setMapPhoto] = useState(null);   // 地図のポップアップから拡大している写真
-  const sidebarRef = useRef(null);   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
+  const sidebarRef = useRef(null);
+  const [kw, setKw] = useState('');               // 検索のキーワード
+  const [allTrips, setAllTrips] = useState(false);   // すべての旅行から探す   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
   const [editingId, setEditingId] = useState(null);   // 編集中の記録のid
 
   // 状態が変わったら自動で保存
@@ -1222,11 +1425,24 @@ function App() {
   const currentId = tripData.currentTripId;
   const current = useMemo(() => records.filter(r => r.tripId === currentId), [records, currentId]);
   const ordered = useMemo(() => orderRecords(current), [current]);   // 日付・時刻の順＋通し番号
+  // ---- 検索（番号は、検索前の順番のまま） ----
+  const searching = kw.trim() !== '';
+  const shown = useMemo(() => searching ? ordered.filter(r => matchRecord(r, kw, tripData.trips)) : ordered, [ordered, kw, tripData.trips]);
+  const otherHits = useMemo(() => searching && allTrips
+    ? records.filter(r => r.tripId !== currentId && matchRecord(r, kw, tripData.trips)).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    : [], [records, kw, allTrips, currentId, tripData.trips]);
+  const tripHits = searching ? tripData.trips.filter(t => t.id !== currentId && kw.trim().toLowerCase().split(/\s+/).every(w => t.name.toLowerCase().includes(w))) : [];
   const editing = records.find(r => r.id === editingId) || null;
 
   // 画面の切り替え：タイトル／クイズのときは、ここで終わり
   if (screen === 'home') {
     return <><Home trips={tripData.trips} records={records} onGo={setScreen} /></>;
+  }
+  if (screen === 'data') {
+    return <DataScreen trips={tripData.trips} records={records} onImport={importData} onExit={() => setScreen('home')} />;
+  }
+  if (screen === 'gallery') {
+    return <Gallery records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />;
   }
   if (screen === 'quiz') {
     return (
@@ -1236,6 +1452,30 @@ function App() {
       </>
     );
   }
+
+  // バックアップファイルの取り込み（mode：'merge'＝追加 / 'replace'＝置き換え）
+  async function importData(data, mode) {
+    let baseTrips = tripData.trips, baseRecs = records;
+    if (mode === 'replace') {
+      await Promise.all(records.map(r => PhotoDB.delete(r.id)));   // 古い高画質版を消す
+      baseTrips = []; baseRecs = [];
+    }
+    const tripIds = new Set(baseTrips.map(t => t.id)), recIds = new Set(baseRecs.map(r => r.id));
+    let trips2 = [...baseTrips, ...(Array.isArray(data.trips) ? data.trips : []).filter(t => !tripIds.has(t.id))];
+    if (!trips2.length) trips2 = [{ id: Date.now(), name: '最初の旅行' }];
+    const fixed = data.records
+      .filter(r => validLatLng(r.lat, r.lng) && !recIds.has(r.id))   // 壊れた座標と、すでにある記録は飛ばす
+      .map(r => trips2.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips2[0].id });
+    for (const r of fixed) {   // 高画質版を、この端末のIndexedDBへ戻す
+      const url = data.fulls && data.fulls[r.id];
+      if (url) { try { await PhotoDB.put(r.id, await (await fetch(url)).blob()); } catch (e) {} }
+    }
+    setRecords([...baseRecs, ...fixed]);
+    setTripData({ trips: trips2, currentTripId: trips2.some(t => t.id === tripData.currentTripId) ? tripData.currentTripId : trips2[0].id });
+    return fixed.length;
+  }
+  function switchTrip(id) { setEditingId(null); setTripData(td => ({ ...td, currentTripId: id })); }
+  function openFromOther(r) { switchTrip(r.tripId); setFocus({ id: r.id }); }   // ほかの旅行の記録へ移動
 
   function addRecord(r) {
     Sound.play('save');
@@ -1290,7 +1530,7 @@ function App() {
         <div className="sidebarBody">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
                 className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v24</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v25</small></h1>
         <label>旅行を選択
           <select value={currentId}
                   onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
@@ -1314,24 +1554,44 @@ function App() {
         </div>
 
         <div className="tabPane" hidden={tab !== 'list'}>
+          <div className="searchRow">
+            <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="メモ・タイトル・日付などで探す（空白で複数）" />
+            <label className="inlineCheck">
+              <input type="checkbox" checked={allTrips} onChange={e => setAllTrips(e.target.checked)} />すべての旅行から探す
+            </label>
+            {searching && <div className="searchCount">この旅行：{shown.length}件{allTrips ? ' ／ ほかの旅行：' + otherHits.length + '件' : ''}</div>}
+            {tripHits.map(t => <button key={t.id} className="chip" onClick={() => switchTrip(t.id)}>旅行「{t.name}」を開く</button>)}
+          </div>
+          {searching && shown.length === 0 && <div className="empty">この旅行には、該当する記録がありません</div>}
           {current.length === 0 && (
             <div className="empty">
               この旅行には、まだ記録がありません。
               <button className="ghost" onClick={() => setTab('add')}>新規追加へ</button>
             </div>
           )}
-          {ordered.map((r, i) => (
+          {shown.map((r, i) => (
             <React.Fragment key={r.id}>
-              {(i === 0 || ordered[i - 1].date !== r.date) && <div className="dayLabel">{r.date}</div>}
+              {(i === 0 || shown[i - 1].date !== r.date) && <div className="dayLabel">{r.date}</div>}
               <RecordCard record={r} isEditing={r.id === editingId}
                         onFocus={id => setFocus({ id })} onEdit={startEdit} onDelete={deleteRecord} />
             </React.Fragment>
           ))}
+          {searching && allTrips && otherHits.length > 0 && (
+            <>
+              <div className="dayLabel">ほかの旅行の記録</div>
+              {otherHits.map(r => (
+                <div className="hitRow" key={r.id} onClick={() => openFromOther(r)}>
+                  {r.photo && <img className="thumb" src={r.photo} alt="" />}
+                  <div><b>{r.title}</b><small>{(tripData.trips.find(t => t.id === r.tripId) || {}).name} ／ {r.date}</small></div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
         <p style={{ fontSize: 11, color: '#888' }}>場所の検索・地図：© OpenStreetMap contributors</p>
         </div>
       </div>
-      <MapView records={ordered} onPhoto={setMapPhoto} tripId={currentId} fitKey={fitKey}
+      <MapView records={shown} onPhoto={setMapPhoto} tripId={currentId} fitKey={fitKey}
                selected={selected} onSelect={selectPlace} focus={focus} />
       {mapPhoto && <Lightbox record={mapPhoto} tripName={(tripData.trips.find(t => t.id === mapPhoto.tripId) || {}).name || ''} onClose={() => setMapPhoto(null)} />}
     </>
