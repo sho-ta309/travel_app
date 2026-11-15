@@ -542,7 +542,7 @@ function BulkImport({ onAdd, selected }) {
       <label>写真を選ぶ（複数選択できます）
         <input type="file" accept="image/*" multiple onChange={handleFiles} />
       </label>
-      <label>フォルダごと選ぶ（パソコンのみ）
+      <label>フォルダごと選ぶ（パソコン推奨）
         <input type="file" webkitdirectory="" multiple onChange={handleFiles} />
       </label>
       {busy && <div className="msg">読み込み中...</div>}
@@ -572,7 +572,7 @@ function BulkImport({ onAdd, selected }) {
             <button className="ghost" onClick={() => setPick({})}>選択を外す</button>
           </div>
           {chosen.length === 0
-            ? <div className="msg">場所を設定する写真を選んでください。1枚ずつ設定するときは、1枚だけ選んで、地図で場所を選び、記録します。これをくり返します</div>
+            ? <div className="msg">場所を設定する写真を選んでください。1枚ずつ設定するときは、1枚だけ選んで、地図で場所を選び、記録します。</div>
             : selected
               ? <button onClick={importToSelected}>選んだ{chosen.length}件を、地図で選んだ場所に記録する</button>
               : <div className="msg">選んだ{chosen.length}件の場所を、地図をクリック（または検索）して選んでください</div>}
@@ -690,14 +690,14 @@ function Home({ trips, records, onGo }) {
           <div><b>{photoCount}</b><span>写真</span></div>
         </div>
         <button className="homeBtn" onClick={() => onGo('register')}>
-          <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で、旅の記録を登録・編集</small>
+          <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で旅の記録を登録・編集</small>
         </button>
         <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
           <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
           <small>{photoCount < 2 ? '写真つきの記録が2件以上になると遊べます' : '写真を選んで、旅の思い出を取り戻そう'}</small>
         </button>
         <button className="homeBtn" disabled={photoCount < 1} onClick={() => onGo('gallery')}>
-          <span className="homeBtnTitle">旅の写真をスライドショーで見る</span><small>旅ごとの写真を、順番に眺める</small>
+          <span className="homeBtnTitle">旅の写真をスライドショーで見る</span><small>旅ごとの写真の振り返り</small>
         </button>
         <button className="homeBtn" onClick={() => onGo('data')}>
           <span className="homeBtnTitle">データの保存・共有</span>
@@ -711,7 +711,7 @@ function Home({ trips, records, onGo }) {
 }
 
 // ---------- クイズの問題を作る ----------
-const HIT_M = 5000;   // 「場所を選ぶ」問題：正解の場所から、この距離（m）以内なら正解
+const HIT_M = 2000;   // 「場所を選ぶ」問題：正解の場所から、この距離（m）以内なら正解
 
 function shuffle(arr) {
   const a = arr.slice();
@@ -764,7 +764,7 @@ function makePlaceQuestions(groups, trips, count, style) {
   return shuffle(groups).slice(0, count).map(g => ({
     type: 'place', answers: g.records, circle: hintCircle(g.records[0]),
     header: tripHeader(trips, g.tripId),
-    text: g.date + ' の ' + slotLabel(g, style) + '、どこにいた？'
+    text: g.date + ' の ' + slotLabel(g, style) + 'はどこにいた？'
   }));
 }
 
@@ -802,7 +802,7 @@ function makeCustomPlaceQuestions(pool, trips, count) {
 
 // 「場所の範囲」のヒント：正解が入るが、中心ではない円（正解がばれないように、中心をずらす）
 function hintCircle(r) {
-  const ang = Math.random() * 2 * Math.PI, off = 1500 * (0.4 + 0.6 * Math.random());   // 中心を、最大1.5kmずらす
+  const ang = Math.random() * 2 * Math.PI, off = 2000 * (0.4 + 0.6 * Math.random());   // 中心を、最大1.5kmずらす
   return {
     lat: r.lat + (off * Math.cos(ang)) / 111320,
     lng: r.lng + (off * Math.sin(ang)) / (111320 * Math.cos(r.lat * Math.PI / 180)),
@@ -1035,8 +1035,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       {(kinds.place || kinds.timePhoto) && (
         <label>時間の聞き方
           <select value={timeStyle} onChange={e => setTimeStyle(e.target.value)}>
-            <option value="hour">（大まかな時間 例:12時台）</option>
-            <option value="exact"> 細かな時刻（例：12:30頃）</option>
+            <option value="hour">（大まかな時間  例:12時台）</option>
+            <option value="exact"> 細かな時刻 （例：12:30頃）</option>
           </select>
         </label>
       )}
@@ -1274,23 +1274,23 @@ function DataScreen({ trips, records, onImport, onExit }) {
       </div>
 
       <h3 className="subhead">書き出す（バックアップ・共有用）</h3>
-      <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（おすすめ）</button>
-      <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す（一覧用の写真のみ）</button>
+      <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（推奨）</button>
+      <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す</button>
 
       <h3 className="subhead">取り込む（復元・ほかの人の記録を追加）</h3>
       <label>取り込み方
         <select value={mode} onChange={e => setMode(e.target.value)}>
-          <option value="merge">今の記録に追加する（同じ記録は、重複しません）</option>
+          <option value="merge">今の記録に追加する（同じ記録は重複しません）</option>
           <option value="replace">今の記録を消して、置き換える（復元用）</option>
         </select>
       </label>
-      <label>バックアップファイル（.json）
+      <label>バックアップファイルの選択（.json）
         <input type="file" accept=".json,application/json" disabled={busy} onChange={importFile} />
       </label>
       {msg && <div className="dataMsg">{msg}</div>}
 
       <h3 className="subhead">記録を共有するには</h3>
-      <p className="dataNote">書き出したファイルを、メールやクラウドなどで相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を見られます。リアルタイムに同期する共有には、別途サーバーが必要です。</p>
+      <p className="dataNote">書き出したファイルを、メールなどのSNSで相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を見られます。</p>
     </div></div>
   );
 }
@@ -1352,7 +1352,7 @@ function Gallery({ records, trips, currentTripId, onExit }) {
             <button className="ghost" onClick={() => setPlaying(p => !p)}>{playing ? '一時停止' : '再生'}</button>
             <span>{Math.min(idx, n - 1) + 1} / {n}</span>
             <select value={sec} onChange={e => setSec(Number(e.target.value))}>
-              {[3, 4, 6, 10].map(v => <option key={v} value={v}>{v}秒ごと</option>)}
+              {[2, 3, 4, 6, 10].map(v => <option key={v} value={v}>{v}秒ごと</option>)}
             </select>
           </div>
           <div className="thumbGrid">
@@ -1516,7 +1516,7 @@ function App() {
     if (editingId === id) setEditingId(null);
   }
   function addTrip() {
-    const name = prompt('旅行の名前（例：2026 京都）');
+    const name = prompt('旅行の名前（例：2026年 京都旅行）');
     if (!name) return;
     const trip = { id: Date.now(), name };
     setEditingId(null);
