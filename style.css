@@ -325,3 +325,51 @@ html, .sidebarBody { scroll-behavior: smooth; }
 .hitRow { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 .hitRow .thumb { flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
 .hitRow small { display: block; color: var(--muted); }
+
+/* ===== ダイアログ（ブラウザ標準の代わり） ===== */
+.dlgBack { position: fixed; inset: 0; z-index: 4000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(12, 21, 40, .6); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); animation: fadeIn .2s ease both; }
+.dlg { width: 100%; max-width: 380px; padding: 22px 20px 18px; background: #fff; border-radius: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, .4); animation: fadeUp .25s ease both; }
+.dlgMsg { margin: 0 0 14px; line-height: 1.8; white-space: pre-line; }
+.dlg input { margin-top: 0; }
+.dlgBtns { display: flex; gap: 10px; margin-top: 18px; }
+.dlgBtns button { flex: 1; margin: 0; min-height: 46px; }
+.dlg button.danger { background: var(--danger); border-color: var(--danger); }
+.ghost.danger { color: var(--danger); border-color: var(--danger); }
+.ghost.danger:hover { background: #fbeeee; border-color: var(--danger); }
+
+/* ===== 旅行の名前変更・削除 ===== */
+.tripTools { display: flex; gap: 8px; margin-top: 8px; }
+.tripTools .ghost { flex: 1; margin: 0; padding: 9px 8px; }
+
+/* ===== 複数の写真 ===== */
+.keptRow { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.keptThumb { position: relative; }
+.keptThumb img { display: block; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(20, 33, 61, .25); }
+.keptThumb button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; margin: 0; padding: 0; border-radius: 50%; font-size: 14px; line-height: 1; background: var(--danger); border-color: var(--danger); }
+.lightboxBody { position: relative; }
+.lbNav { position: absolute; top: 38%; width: 44px; height: 44px; margin: 0; padding: 0; border-radius: 50%; font-size: 26px; line-height: 1; background: rgba(20, 33, 61, .6); }
+.lbNav.prev { left: 10px; } .lbNav.next { right: 10px; }
+.lbCount { position: absolute; top: 12px; left: 12px; padding: 2px 10px; font-size: 12px; color: #fff; border-radius: 10px; background: rgba(20, 33, 61, .6); }
+
+/* ===== ピンのクラスタ表示 ===== */
+.clusterIcon { background: none; border: none; }
+.clusterIcon span { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 700; border: 3px solid var(--gold-soft); box-shadow: 0 3px 8px rgba(0, 0, 0, .35); }
+
+/* ===== 地図の種類ボタン（丸） ===== */
+.mapTypeBox { position: relative; }
+.mapTypeBtn { display: flex; align-items: center; justify-content: center; width: 46px; height: 46px; margin: 0; padding: 0; border-radius: 50%; color: var(--navy); background: #fff; border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(20, 33, 61, .3); }
+.mapTypeBtn:hover { background: #f4efe5; color: var(--navy); }
+.mapTypeList { position: absolute; left: 0; bottom: 56px; min-width: 170px; overflow: hidden; background: #fff; border-radius: 10px; box-shadow: 0 6px 20px rgba(20, 33, 61, .3); }
+.mapTypeItem { display: block; width: 100%; margin: 0; padding: 11px 14px; text-align: left; font-size: 14px; letter-spacing: .02em; color: var(--ink); background: #fff; border: none; border-bottom: 1px solid var(--line); border-radius: 0; }
+.mapTypeItem:last-child { border-bottom: none; }
+.mapTypeItem:hover { background: #f4efe5; color: var(--ink); }
+.mapTypeItem.on { font-weight: 700; color: var(--navy); background: #f4efe5; }
+
+/* ===== タイトル画面：上下の写真の帯は固定、ボタンの部分だけが上下に動く ===== */
+.screen.home { overflow: hidden; padding: 0; gap: 0; }
+.screen.home > :first-child, .screen.home > :last-child { margin: 0; }
+.screen.home .inner { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-self: center; width: 100%; max-width: 520px; margin: 0; padding: 12px 18px; }
+.screen.home .inner > :first-child { margin-top: auto; }
+.screen.home .inner > :last-child { margin-bottom: auto; }
+.resetRow { flex: none; align-self: flex-end; padding: 2px 16px 8px; }
+.resetRow .ghost { font-size: 12px; padding: 6px 12px; background: rgba(255, 255, 255, .7); }
