@@ -1236,6 +1236,11 @@ function DataScreen({ trips, records, onImport, onExit }) {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('merge');
   const [exportReadOnly, setExportReadOnly] = useState(false);
+  const [exportTrips, setExportTrips] = useState(() => {
+    const map = {};
+    trips.forEach(t => map[t.id] = true);
+    return map;
+  });
   const [usage, setUsage] = useState('');
   const days = daysSinceBackup();
   const recBytes = new Blob([localStorage.getItem(STORAGE_KEY) || '']).size;
@@ -1247,14 +1252,23 @@ function DataScreen({ trips, records, onImport, onExit }) {
   }, []);
 
   async function exportFile(full) {
+    const targetTrips = exportReadOnly ? trips.filter(t => exportTrips[t.id]) : trips;
+    const targetTripIds = new Set(targetTrips.map(t => t.id));
+    const targetRecords = exportReadOnly ? records.filter(r => targetTripIds.has(r.tripId)) : records;
+    
+    if (targetTrips.length === 0) {
+      setMsg('書き出す旅行が選ばれていません。');
+      return;
+    }
+
     setBusy(true); setMsg('書き出し中…（写真が多いと、時間がかかります）');
     try {
       const statsToExport = exportReadOnly ? { rec: {}, runs: [] } : loadStats();
       const parts = ['{"app":"travel-log","version":2,"metadata":{"mode":' + JSON.stringify(exportReadOnly ? "readOnly" : "edit") + '},"exportedAt":' + JSON.stringify(new Date().toISOString())
-        + ',"trips":' + JSON.stringify(trips) + ',"records":' + JSON.stringify(records) + ',"stats":' + JSON.stringify(statsToExport) + ',"fulls":{'];
+        + ',"trips":' + JSON.stringify(targetTrips) + ',"records":' + JSON.stringify(targetRecords) + ',"stats":' + JSON.stringify(statsToExport) + ',"fulls":{'];
       let first = true;
       if (full) {
-        for (const r of records) for (const p of getPhotos(r)) {
+        for (const r of targetRecords) for (const p of getPhotos(r)) {
           const blob = await PhotoDB.get(p.k);
           if (!blob) continue;
           parts.push((first ? '' : ',') + JSON.stringify(String(p.k)) + ':' + JSON.stringify(await blobToDataURL(blob)));
@@ -1319,8 +1333,19 @@ function DataScreen({ trips, records, onImport, onExit }) {
       <label className="inlineCheck" style={{ marginBottom: 12 }}>
         <input type="checkbox" checked={exportReadOnly} onChange={e => setExportReadOnly(e.target.checked)} /> 閲覧専用（共有用）ファイルとして書き出す
       </label>
-      <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（推奨）</button>
-      <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す</button>
+      {exportReadOnly && (
+        <div style={{ marginBottom: 12, padding: '12px 14px', background: '#fffaf0', border: '1px solid var(--gold)', borderRadius: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--navy)', marginBottom: 8 }}>共有する旅行を選ぶ</div>
+          {trips.map(t => (
+            <label key={t.id} className="inlineCheck" style={{ marginTop: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!exportTrips[t.id]} onChange={e => setExportTrips({...exportTrips, [t.id]: e.target.checked})} />
+              {t.name} <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({records.filter(r => r.tripId === t.id).length}件)</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <button disabled={busy || (exportReadOnly && !Object.values(exportTrips).some(Boolean))} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（推奨）</button>
+      <button className="ghost fullw" disabled={busy || (exportReadOnly && !Object.values(exportTrips).some(Boolean))} onClick={() => exportFile(false)}>軽量版で書き出す</button>
       
       <h3 className="subhead">取り込む（復元・ほかの人の記録を追加）</h3>
       <label>取り込み方
