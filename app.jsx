@@ -12,7 +12,8 @@ const Dialog = (() => {
     bind: fn => { setter = fn; },
     confirm: (message, o = {}) => open({ kind: 'confirm', message, ...o }),
     prompt: (message, value = '', o = {}) => open({ kind: 'prompt', message, value, ...o }),
-    alert: message => open({ kind: 'alert', message })
+    alert: message => open({ kind: 'alert', message }),
+    choice: (message, choices, o = {}) => open({ kind: 'choice', message, choices, ...o })
   };
 })();
 function DialogHost() {
@@ -20,19 +21,29 @@ function DialogHost() {
   const [val, setVal] = useState('');
   useEffect(() => { Dialog.bind(cfg => { setVal(cfg.value || ''); setD(cfg); }); return () => Dialog.bind(null); }, []);
   if (!d) return null;
-  const cancelVal = d.kind === 'prompt' ? null : d.kind === 'confirm' ? false : true;
+  const cancelVal = d.kind === 'prompt' ? null : d.kind === 'confirm' ? false : d.kind === 'choice' ? null : true;
   const close = r => { d.resolve(r); setD(null); };
   return ReactDOM.createPortal(
     <div className="dlgBack" onClick={() => close(cancelVal)}>
       <form className="dlg" onClick={e => e.stopPropagation()}
             onKeyDown={e => { if (e.key === 'Escape') close(cancelVal); }}
-            onSubmit={e => { e.preventDefault(); close(d.kind === 'prompt' ? val : true); }}>
+            onSubmit={e => { e.preventDefault(); if (d.kind !== 'choice') close(d.kind === 'prompt' ? val : true); }}>
         <p className="dlgMsg">{d.message}</p>
         {d.kind === 'prompt' && <input autoFocus value={val} onChange={e => setVal(e.target.value)} />}
-        <div className="dlgBtns">
-          {d.kind !== 'alert' && <button type="button" className="ghost" onClick={() => close(cancelVal)}>キャンセル</button>}
-          <button type="submit" className={d.danger ? 'danger' : ''} autoFocus={d.kind !== 'prompt'}>{d.okText || 'OK'}</button>
-        </div>
+        {d.kind === 'choice' ? (
+          <div className="dlgBtns" style={{ flexDirection: 'column', gap: 8 }}>
+            {d.choices.map((c, i) => (
+              <button key={i} type="button" className={c.danger ? 'danger' : c.ghost ? 'ghost' : ''} onClick={() => close(c.value)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="dlgBtns">
+            {d.kind !== 'alert' && <button type="button" className="ghost" onClick={() => close(cancelVal)}>キャンセル</button>}
+            <button type="submit" className={d.danger ? 'danger' : ''} autoFocus={d.kind !== 'prompt'}>{d.okText || 'OK'}</button>
+          </div>
+        )}
       </form>
     </div>, document.body);
 }
@@ -709,7 +720,7 @@ function Marquee({ items, reverse, onPick }) {
   );
 }
 
-function Home({ trips, records, onGo, onReset, isViewOnly, onSetViewOnly }) {
+function Home({ trips, records, onGo, onReset, isViewOnly, onExitViewOnly }) {
   const photoCount = records.filter(r => r.photo).length;
   const days = daysSinceBackup();
   const [view, setView] = useState(null);
@@ -730,7 +741,7 @@ function Home({ trips, records, onGo, onReset, isViewOnly, onSetViewOnly }) {
         {isViewOnly && (
           <div className="msg" style={{textAlign:"center",marginBottom:12}}>
             ※ 現在、閲覧専用モードです。編集はできません。<br/>
-            <button className="ghost" style={{marginTop: 8}} onClick={() => onSetViewOnly(false)}>編集モードに戻る</button>
+            <button className="ghost" style={{marginTop: 8}} onClick={onExitViewOnly}>編集モードに戻る</button>
           </div>
         )}
         <button className="homeBtn" onClick={() => onGo('register')}>
@@ -1448,10 +1459,17 @@ function App() {
 
   // 閲覧モードの状態管理（localStorageで保持）
   const [isViewOnly, setIsViewOnly] = useState(() => localStorage.getItem('travel-log-viewonly') === 'true');
+  const [importedViewIds, setImportedViewIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('travel-log-viewids') || '{"trips":[],"records":[]}'); }
+    catch (e) { return { trips: [], records: [] }; }
+  });
   
   useEffect(() => {
     localStorage.setItem('travel-log-viewonly', isViewOnly);
   }, [isViewOnly]);
+  useEffect(() => {
+    localStorage.setItem('travel-log-viewids', JSON.stringify(importedViewIds));
+  }, [importedViewIds]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
@@ -1470,7 +1488,46 @@ function App() {
   const tripHits = searching ? tripData.trips.filter(t => t.id !== currentId && kw.trim().toLowerCase().split(/\s+/).every(w => t.name.toLowerCase().includes(w))) : [];
   const editing = records.find(r => r.id === editingId) || null;
 
-  if (screen === 'home') return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} isViewOnly={isViewOnly} onSetViewOnly={setIsViewOnly} /></>;
+  async function exitViewOnlyMode() {
+    const hasImported = importedViewIds.records.length > 0 || importedViewIds.trips.length > 0;
+    if (!hasImported) {
+      setIsViewOnly(false);
+      return;
+    }
+    const ans = await Dialog.choice(
+      '編集モードに戻ります。\n閲覧モードで読み込んだ記録（' + importedViewIds.records.length + '件）をどうしますか？',
+      [
+        { label: '自分の記録として保存して戻る', value: 'keep' },
+        { label: '読み込んだ記録を削除して戻る', value: 'discard', danger: true },
+        { label: 'キャンセル（閲覧モードを続ける）', value: null, ghost: true }
+      ]
+    );
+    if (!ans) return;
+    if (ans === 'discard') {
+      const delRecSet = new Set(importedViewIds.records);
+      const delTripSet = new Set(importedViewIds.trips);
+      // 写真の削除
+      records.filter(r => delRecSet.has(r.id)).forEach(r => {
+        getPhotos(r).forEach(p => PhotoDB.delete(p.k));
+        PhotoDB.delete(r.id);
+      });
+      const nextRecords = records.filter(r => !delRecSet.has(r.id));
+      let nextTrips = tripData.trips.filter(t => !delTripSet.has(t.id));
+      if (!nextTrips.length) {
+        const first = { id: Date.now(), name: '最初の旅行' };
+        nextTrips = [first];
+      }
+      const nextCurrentTripId = nextTrips.some(t => t.id === tripData.currentTripId)
+        ? tripData.currentTripId
+        : nextTrips[0].id;
+      setRecords(nextRecords);
+      setTripData({ trips: nextTrips, currentTripId: nextCurrentTripId });
+    }
+    setImportedViewIds({ trips: [], records: [] });
+    setIsViewOnly(false);
+  }
+
+  if (screen === 'home') return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} isViewOnly={isViewOnly} onExitViewOnly={exitViewOnlyMode} /></>;
   if (screen === 'data') return <DataScreen trips={tripData.trips} records={records} onImport={importData} onExit={() => setScreen('home')} />;
   if (screen === 'gallery') return <Gallery records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />;
   if (screen === 'quiz') return <><Quiz records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} /></>;
@@ -1494,6 +1551,16 @@ function App() {
     
     if (asReadOnly) {
       setIsViewOnly(true);
+      const addedTripIds = (Array.isArray(data.trips) ? data.trips : []).filter(t => !tripIds.has(t.id)).map(t => t.id);
+      const addedRecIds = fixed.map(r => r.id);
+      if (actualMode === 'replace') {
+        setImportedViewIds({ trips: trips2.map(t => t.id), records: addedRecIds });
+      } else {
+        setImportedViewIds(prev => ({
+          trips: [...new Set([...prev.trips, ...addedTripIds])],
+          records: [...new Set([...prev.records, ...addedRecIds])]
+        }));
+      }
     }
     
     setRecords([...baseRecs, ...fixed]);
