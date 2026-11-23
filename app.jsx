@@ -709,7 +709,7 @@ function Marquee({ items, reverse, onPick }) {
   );
 }
 
-function Home({ trips, records, onGo, onReset, isViewOnly }) {
+function Home({ trips, records, onGo, onReset, isViewOnly, onSetViewOnly }) {
   const photoCount = records.filter(r => r.photo).length;
   const days = daysSinceBackup();
   const [view, setView] = useState(null);
@@ -727,7 +727,12 @@ function Home({ trips, records, onGo, onReset, isViewOnly }) {
           <div><b>{records.length}</b><span>記録</span></div>
           <div><b>{photoCount}</b><span>写真</span></div>
         </div>
-        {isViewOnly && <div className="msg" style={{textAlign:"center",marginBottom:12}}>※ 閲覧専用モードです。編集はできません。</div>}
+        {isViewOnly && (
+          <div className="msg" style={{textAlign:"center",marginBottom:12}}>
+            ※ 現在、閲覧専用モードです。編集はできません。<br/>
+            <button className="ghost" style={{marginTop: 8}} onClick={() => onSetViewOnly(false)}>編集モードに戻る</button>
+          </div>
+        )}
         <button className="homeBtn" disabled={isViewOnly} onClick={() => onGo('register')}>
           <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で旅の記録を登録・編集</small>
         </button>
@@ -1219,6 +1224,7 @@ function DataScreen({ trips, records, onImport, onExit }) {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('merge');
+  const [exportReadOnly, setExportReadOnly] = useState(false);
   const [usage, setUsage] = useState('');
   const days = daysSinceBackup();
   const recBytes = new Blob([localStorage.getItem(STORAGE_KEY) || '']).size;
@@ -1232,8 +1238,9 @@ function DataScreen({ trips, records, onImport, onExit }) {
   async function exportFile(full) {
     setBusy(true); setMsg('書き出し中…（写真が多いと、時間がかかります）');
     try {
-      const parts = ['{"app":"travel-log","version":1,"exportedAt":' + JSON.stringify(new Date().toISOString())
-        + ',"trips":' + JSON.stringify(trips) + ',"records":' + JSON.stringify(records) + ',"stats":' + JSON.stringify(loadStats()) + ',"fulls":{'];
+      const statsToExport = exportReadOnly ? { rec: {}, runs: [] } : loadStats();
+      const parts = ['{"app":"travel-log","version":2,"metadata":{"mode":' + JSON.stringify(exportReadOnly ? "readOnly" : "edit") + '},"exportedAt":' + JSON.stringify(new Date().toISOString())
+        + ',"trips":' + JSON.stringify(trips) + ',"records":' + JSON.stringify(records) + ',"stats":' + JSON.stringify(statsToExport) + ',"fulls":{'];
       let first = true;
       if (full) {
         for (const r of records) for (const p of getPhotos(r)) {
@@ -1246,11 +1253,14 @@ function DataScreen({ trips, records, onImport, onExit }) {
       parts.push('}}');
       const url = URL.createObjectURL(new Blob(parts, { type: 'application/json' }));
       const a = document.createElement('a');
-      a.href = url; a.download = 'travel-log-' + toDateStr(new Date()) + (full ? '-full' : '') + '.json';
+      a.href = url; a.download = 'travel-log-' + toDateStr(new Date()) + (full ? '-full' : '') + (exportReadOnly ? '-shared' : '') + '.json';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
-      localStorage.setItem(LAST_BACKUP, String(Date.now()));
-      setMsg('書き出しました。ダウンロードされたファイルを、大切に保管してください。');
+      
+      if (!exportReadOnly) {
+        localStorage.setItem(LAST_BACKUP, String(Date.now()));
+      }
+      setMsg(exportReadOnly ? '共有用の閲覧専用ファイルを書き出しました。' : '書き出しました。ダウンロードされたファイルを、大切に保管してください。');
     } catch (e) { setMsg('書き出せませんでした：' + (e.message || e)); }
     setBusy(false);
   }
@@ -1264,8 +1274,10 @@ function DataScreen({ trips, records, onImport, onExit }) {
     try {
       const data = JSON.parse(await file.text());
       if (data.app !== 'travel-log' || !Array.isArray(data.records)) throw new Error('このアプリのバックアップファイルではありません');
+      
+      const asReadOnly = (data.metadata && data.metadata.mode === 'readOnly') || mode === 'force_view';
       const n = await onImport(data, mode);
-      setMsg(n + '件の記録を取り込みました。');
+      setMsg(asReadOnly ? '閲覧専用モードとしてデータを取り込みました。' : n + '件の記録を取り込みました。');
     } catch (err) { setMsg('取り込めませんでした：' + (err.message || err)); }
     setBusy(false);
   }
@@ -1282,13 +1294,18 @@ function DataScreen({ trips, records, onImport, onExit }) {
         <div>最後のバックアップ：{days === null ? 'まだありません' : days === 0 ? '今日' : days + '日前'}</div>
       </div>
       <h3 className="subhead">書き出す（バックアップ・共有用）</h3>
+      <label className="inlineCheck" style={{ marginBottom: 12 }}>
+        <input type="checkbox" checked={exportReadOnly} onChange={e => setExportReadOnly(e.target.checked)} /> 閲覧専用（共有用）ファイルとして書き出す
+      </label>
       <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（推奨）</button>
       <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す</button>
+      
       <h3 className="subhead">取り込む（復元・ほかの人の記録を追加）</h3>
       <label>取り込み方
         <select value={mode} onChange={e => setMode(e.target.value)}>
           <option value="merge">今の記録に追加する（同じ記録は重複しません）</option>
           <option value="replace">今の記録を消して、置き換える（復元用）</option>
+          <option value="force_view">閲覧モードとして取り込む（今の記録に追加されます）</option>
         </select>
       </label>
       <label>バックアップファイルの選択（.json）
@@ -1296,7 +1313,7 @@ function DataScreen({ trips, records, onImport, onExit }) {
       </label>
       {msg && <div className="dataMsg">{msg}</div>}
       <h3 className="subhead">記録を共有するには</h3>
-      <p className="dataNote">書き出したファイルを相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を共有できます。</p>
+      <p className="dataNote">「閲覧専用（共有用）として書き出す」にチェックを入れてファイルを保存し、そのファイルを相手に送ります。相手が取り込むと、自動的に閲覧モードで開かれます。</p>
     </div></div>
   );
 }
@@ -1429,8 +1446,12 @@ function App() {
   const [allTrips, setAllTrips] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
-  // 閲覧専用モード判定
-  const isViewOnly = useMemo(() => new URLSearchParams(window.location.search).has('view_only'), []);
+  // 閲覧モードの状態管理（localStorageで保持）
+  const [isViewOnly, setIsViewOnly] = useState(() => localStorage.getItem('travel-log-viewonly') === 'true');
+  
+  useEffect(() => {
+    localStorage.setItem('travel-log-viewonly', isViewOnly);
+  }, [isViewOnly]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
@@ -1449,14 +1470,17 @@ function App() {
   const tripHits = searching ? tripData.trips.filter(t => t.id !== currentId && kw.trim().toLowerCase().split(/\s+/).every(w => t.name.toLowerCase().includes(w))) : [];
   const editing = records.find(r => r.id === editingId) || null;
 
-  if (screen === 'home') return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} isViewOnly={isViewOnly} /></>;
+  if (screen === 'home') return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} isViewOnly={isViewOnly} onSetViewOnly={setIsViewOnly} /></>;
   if (screen === 'data') return <DataScreen trips={tripData.trips} records={records} onImport={importData} onExit={() => setScreen('home')} />;
   if (screen === 'gallery') return <Gallery records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />;
   if (screen === 'quiz') return <><Quiz records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} /></>;
 
   async function importData(data, mode) {
+    const asReadOnly = (data.metadata && data.metadata.mode === 'readOnly') || mode === 'force_view';
+    const actualMode = mode === 'force_view' ? 'merge' : mode;
+
     let baseTrips = tripData.trips, baseRecs = records;
-    if (mode === 'replace') { await PhotoDB.clear(); baseTrips = []; baseRecs = []; }
+    if (actualMode === 'replace') { await PhotoDB.clear(); baseTrips = []; baseRecs = []; }
     const tripIds = new Set(baseTrips.map(t => t.id)), recIds = new Set(baseRecs.map(r => r.id));
     let trips2 = [...baseTrips, ...(Array.isArray(data.trips) ? data.trips : []).filter(t => !tripIds.has(t.id))];
     if (!trips2.length) trips2 = [{ id: Date.now(), name: '最初の旅行' }];
@@ -1467,9 +1491,14 @@ function App() {
       const url = data.fulls && data.fulls[p.k];
       if (url) { try { await PhotoDB.put(p.k, await (await fetch(url)).blob()); } catch (e) {} }
     }
+    
+    if (asReadOnly) {
+      setIsViewOnly(true);
+    }
+    
     setRecords([...baseRecs, ...fixed]);
     setTripData({ trips: trips2, currentTripId: trips2.some(t => t.id === tripData.currentTripId) ? tripData.currentTripId : trips2[0].id });
-    if (mode === 'replace' && data.stats && data.stats.rec) { try { localStorage.setItem(STATS_KEY, JSON.stringify(data.stats)); } catch (e) {} }
+    if (actualMode === 'replace' && data.stats && data.stats.rec) { try { localStorage.setItem(STATS_KEY, JSON.stringify(data.stats)); } catch (e) {} }
     return fixed.length;
   }
   function switchTrip(id) { setEditingId(null); setTripData(td => ({ ...td, currentTripId: id })); }
@@ -1558,7 +1587,7 @@ function App() {
         <SheetHandle targetRef={sidebarRef} />
         <div className="sidebarBody">
         <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }} className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v27</small></h1>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v28</small></h1>
         <label>旅行を選択
           <select value={currentId} onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
             {tripData.trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
