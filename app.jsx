@@ -10,8 +10,8 @@ const Dialog = (() => {
   const open = cfg => new Promise(resolve => { if (!setter) { resolve(null); return; } setter({ ...cfg, resolve }); });
   return {
     bind: fn => { setter = fn; },
-    confirm: (message, o = {}) => open({ kind: 'confirm', message, ...o }),   // true / false
-    prompt: (message, value = '', o = {}) => open({ kind: 'prompt', message, value, ...o }),   // 文字 / null
+    confirm: (message, o = {}) => open({ kind: 'confirm', message, ...o }),
+    prompt: (message, value = '', o = {}) => open({ kind: 'prompt', message, value, ...o }),
     alert: message => open({ kind: 'alert', message })
   };
 })();
@@ -37,7 +37,7 @@ function DialogHost() {
     </div>, document.body);
 }
 
-// ---------- 効果音（音声ファイルは使わず、ブラウザで音を作ります） ----------
+// ---------- 効果音 ----------
 const Sound = (() => {
   const KEY = 'travel-log-sound';
   let ctx = null;
@@ -50,32 +50,30 @@ const Sound = (() => {
       if (!AC) return null;
       ctx = new AC();
     }
-    if (ctx.state === 'suspended') ctx.resume();   // スマホでは、最初の操作のあとに音が出せるようになる
+    if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
-  // 1つの音：周波数(Hz)、開始までの秒数、長さ(秒)、波形、音量(0〜1)
   function tone(c, freq, at, dur, type, vol, freq2) {
     const t0 = c.currentTime + at;
     const osc = c.createOscillator(), gain = c.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
-    if (freq2) osc.frequency.exponentialRampToValueAtTime(freq2, t0 + dur);   // 音の高さをなめらかに変える
+    if (freq2) osc.frequency.exponentialRampToValueAtTime(freq2, t0 + dur);
     gain.gain.setValueAtTime(0.0001, t0);
     gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);   // なめらかに消す（プチッという雑音を防ぐ）
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(gain); gain.connect(c.destination);
     osc.start(t0); osc.stop(t0 + dur + 0.05);
   }
-  // 音の一覧：好みに合わせて、数字を変えられます
   const SOUNDS = {
     click:   c => tone(c, 880, 0, 0.06, 'sine', 0.12),
     pin:     c => tone(c, 660, 0, 0.09, 'triangle', 0.15),
     select:  c => { tone(c, 740, 0, 0.07, 'triangle', 0.15); tone(c, 988, 0.06, 0.1, 'triangle', 0.15); },
     save:    c => { tone(c, 660, 0, 0.1, 'sine', 0.15); tone(c, 880, 0.09, 0.16, 'sine', 0.15); },
     delete:  c => tone(c, 300, 0, 0.14, 'triangle', 0.15),
-    open:    c => tone(c, 520, 0, 0.16, 'sine', 0.14, 900),        // 写真を拡大：上がる音
-    close:   c => tone(c, 900, 0, 0.14, 'sine', 0.12, 520),        // 拡大を閉じる：下がる音
-    move:    c => tone(c, 300, 0, 0.35, 'triangle', 0.1, 760),     // 地図の移動：すーっと上がる音
+    open:    c => tone(c, 520, 0, 0.16, 'sine', 0.14, 900),
+    close:   c => tone(c, 900, 0, 0.14, 'sine', 0.12, 520),
+    move:    c => tone(c, 300, 0, 0.35, 'triangle', 0.1, 760),
     correct: c => [523, 659, 784].forEach((f, i) => tone(c, f, i * 0.1, 0.22, 'sine', 0.18)),
     wrong:   c => { tone(c, 220, 0, 0.18, 'sawtooth', 0.1); tone(c, 165, 0.17, 0.3, 'sawtooth', 0.1); },
     finish:  c => [523, 659, 784, 1047].forEach((f, i) => tone(c, f, 0.12 + i * 0.12, 0.3, 'triangle', 0.16))
@@ -85,18 +83,17 @@ const Sound = (() => {
     setEnabled(v) { enabled = v; try { localStorage.setItem(KEY, v ? 'on' : 'off'); } catch (e) {} },
     play(name) {
       if (!enabled) return;
-      try { const c = getCtx(); if (c && SOUNDS[name]) SOUNDS[name](c); } catch (e) {}   // 音が出せなくても、アプリは止めない
+      try { const c = getCtx(); if (c && SOUNDS[name]) SOUNDS[name](c); } catch (e) {}
     }
   };
 })();
 
-// ボタンを押したときの音（ボタンに data-silent を付けると、この音は鳴らさない）
 document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('button, input[type="checkbox"], input[type="radio"], .leaflet-control-layers-toggle, .leaflet-control-zoom a');
   if (b && !b.disabled && !b.closest('[data-silent]')) Sound.play('click');
 });
 
-// ---------- 地図の種類を切り替える、丸いボタン（左下） ----------
+// ---------- 地図の種類切り替え ----------
 const MapTypes = L.Control.extend({
   options: { position: 'bottomleft' },
   initialize: function (layers, first, opts) { L.Util.setOptions(this, opts); this._layers = layers; this._first = first; },
@@ -126,23 +123,18 @@ const MapTypes = L.Control.extend({
   }
 });
 
-// ---------- 地図のピン（見た目は style.css の .pin） ----------
 const PIN = L.divIcon({ className: 'pin', html: '<span></span>', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
 const PIN_TEMP = L.divIcon({ className: 'pin temp', html: '<span></span>', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
 
-// ---------- 共通の道具 ----------
-// 緯度・経度が正しい数値か（0,0 は「位置情報が空」のときの値なので除外）
 function validLatLng(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
   return !(lat === 0 && lng === 0);
 }
-
 function toDateStr(d) {
   const p = n => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
-
 function toTimeStr(d) {
   const p = n => String(n).padStart(2, '0');
   return p(d.getHours()) + ':' + p(d.getMinutes());
@@ -156,17 +148,15 @@ function loadTrips() {
   const first = { id: Date.now(), name: '最初の旅行' };
   return { trips: [first], currentTripId: first.id };
 }
-
 function loadRecords(trips) {
   let list = [];
   try { list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) {}
   return list
-    .filter(r => validLatLng(r.lat, r.lng))   // 座標が壊れた記録は除外
+    .filter(r => validLatLng(r.lat, r.lng))
     .map(r => trips.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips[0].id });
 }
 
-// 写真を縮小して文字列にする（使い終わったらメモリを解放）
-// ---------- 高画質の写真の保管庫（IndexedDB：localStorageより、ずっと大きく保存できる） ----------
+// ---------- 高画質の保管庫 (IndexedDB) ----------
 const PhotoDB = (() => {
   let dbp = null;
   function open() {
@@ -186,7 +176,7 @@ const PhotoDB = (() => {
       const req = fn(tx.objectStore('full'));
       tx.oncomplete = () => resolve(req && req.result);
       tx.onerror = () => reject(tx.error);
-    })).catch(() => undefined);   // 使えない環境でも、アプリは止めない
+    })).catch(() => undefined);
   }
   return {
     put: (id, blob) => run('readwrite', st => st.put(blob, id)),
@@ -195,9 +185,8 @@ const PhotoDB = (() => {
     clear: () => run('readwrite', st => st.clear())
   };
 })();
-try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}   // 保存データを消されにくくする依頼
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
 
-// 写真を読み込み、「一覧用の小さい画像（文字列）」と「高画質版（Blob）」の両方を作る
 function readPhoto(file, thumbW = 800) {
   return new Promise(resolve => {
     const url = URL.createObjectURL(file);
@@ -209,12 +198,12 @@ function readPhoto(file, thumbW = 800) {
         const c = document.createElement('canvas');
         c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        const finish = out => { c.width = c.height = 0; res(out); };   // メモリを解放
+        const finish = out => { c.width = c.height = 0; res(out); };
         if (asBlob) c.toBlob(b => finish(b), 'image/jpeg', quality);
         else finish(c.toDataURL('image/jpeg', quality));
       });
       const thumb = await make(Math.min(1, thumbW / img.width), 0.7, false);
-      const full = await make(Math.min(1, 2048 / Math.max(img.width, img.height)), 0.88, true);   // 長い辺を2048pxまで
+      const full = await make(Math.min(1, 2048 / Math.max(img.width, img.height)), 0.88, true);
       done({ thumb, full });
     };
     img.onerror = () => done(null);
@@ -222,24 +211,20 @@ function readPhoto(file, thumbW = 800) {
   });
 }
 
-// 記録を「日付→時刻」の順に並べ、時刻のある記録に通し番号（1, 2, 3…）を付ける
 function orderRecords(list) {
-  const idx = new Map(list.map((r, i) => [r.id, i]));   // 登録順（同じ時刻のときの並び）
+  const idx = new Map(list.map((r, i) => [r.id, i]));
   const sorted = list.slice().sort((a, b) =>
     (a.date || '').localeCompare(b.date || '') ||
-    (a.time ? 0 : 1) - (b.time ? 0 : 1) ||               // 同じ日では、時刻のある記録を先に
+    (a.time ? 0 : 1) - (b.time ? 0 : 1) ||
     (a.time || '').localeCompare(b.time || '') ||
     idx.get(a.id) - idx.get(b.id));
   let n = 0;
   return sorted.map(r => ({ ...r, n: r.time ? ++n : null }));
 }
-// 番号つきのピン
 function numPin(n, active) {
   return L.divIcon({ className: 'pin num' + (active ? ' active' : ''), html: '<span><em>' + n + '</em></span>',
                      iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28], tooltipAnchor: [12, -14] });
 }
-
-// キーワードで記録を探す（空白で区切ると、すべての言葉を含む記録だけ）。タイトル・メモ・質問・日付・旅行名が対象
 function matchRecord(r, kw, trips) {
   const words = (kw || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
@@ -251,11 +236,10 @@ function blobToDataURL(blob) {
   return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
 }
 const LAST_BACKUP = 'travel-log-lastbackup';
-function daysSinceBackup() {   // 最後のバックアップから何日か（まだなら null）
+function daysSinceBackup() {
   const t = Number(localStorage.getItem(LAST_BACKUP) || 0);
   return t ? Math.floor((Date.now() - t) / 86400000) : null;
 }
-// 高画質版があれば、それを返す（読み込み中や、なければ、保存済みの写真）
 function useHQ(record) {
   const id = record ? (record.pk !== undefined ? record.pk : record.id) : null;
   const [hq, setHq] = useState({ id: null, src: null });
@@ -268,14 +252,18 @@ function useHQ(record) {
   return hq.id === id && hq.src ? hq.src : (record ? record.photo : null);
 }
 
-// 記録の写真の一覧：[{ t: 一覧用の写真, k: 高画質版の保管キー }]。以前の記録（写真1枚）も、同じ形で扱う
+// 高画質の画像を遅延ロードして表示するコンポーネント（クイズやギャラリーで使用）
+function HQImage({ record, className, alt, onClick, style }) {
+  const src = useHQ(record);
+  return <img src={src} className={className} alt={alt || ''} onClick={onClick} loading="lazy" decoding="async" style={style} />;
+}
+
 function getPhotos(r) { return r.photos || (r.photo ? [{ t: r.photo, k: r.id }] : []); }
 
-// ---------- クイズの成績（この端末に保存） ----------
 const STATS_KEY = 'travel-log-quizstats';
 function loadStats() {
   try { const st = JSON.parse(localStorage.getItem(STATS_KEY) || 'null'); if (st && st.rec) return st; } catch (e) {}
-  return { rec: {}, runs: [] };   // rec：記録ごとの { r: 正解数, w: 不正解数 } / runs：挑戦の履歴
+  return { rec: {}, runs: [] };
 }
 function recordRun(qs, results, score) {
   const st = loadStats();
@@ -286,41 +274,13 @@ function recordRun(qs, results, score) {
   st.runs = [...st.runs, { t: Date.now(), score, total: qs.length }].slice(-50);
   try { localStorage.setItem(STATS_KEY, JSON.stringify(st)); } catch (e) {}
 }
-const isWeak = (st, id) => !!st.rec[id] && st.rec[id].w > st.rec[id].r;   // 間違いのほうが多い記録
-// 条件（preds）に当てはまるものを前に並べる（同じ順位の中は、ランダム）
+const isWeak = (st, id) => !!st.rec[id] && st.rec[id].w > st.rec[id].r;
 function prio(items, preds) {
   const ps = preds.filter(Boolean);
   const score = x => ps.reduce((sum, p, i) => sum + (p(x) ? (1 << (ps.length - 1 - i)) : 0), 0);
   return shuffle(items).sort((a, b) => score(b) - score(a));
 }
 
-function readAndResize(file, maxW = 800) {
-  return new Promise(resolve => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    const done = value => {
-      img.onload = img.onerror = null;
-      img.src = '';
-      URL.revokeObjectURL(url);
-      resolve(value);
-    };
-    img.onload = () => {
-      if (!img.width) { done(null); return; }
-      const scale = Math.min(1, maxW / img.width);
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * scale);
-      c.height = Math.round(img.height * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      const data = c.toDataURL('image/jpeg', 0.7);
-      c.width = c.height = 0;
-      done(data);
-    };
-    img.onerror = () => done(null);
-    img.src = url;
-  });
-}
-
-// 写真から位置情報と撮影日を読み取る（取れなければ位置は null）
 async function readPhotoInfo(file) {
   let gps = null, taken = null;
   try {
@@ -332,7 +292,7 @@ async function readPhotoInfo(file) {
   } catch (e) {}
   const good = !!gps && validLatLng(gps.latitude, gps.longitude);
   const hasDate = taken instanceof Date;
-  const d = hasDate ? taken : new Date(file.lastModified);   // 撮影日がなければファイルの更新日
+  const d = hasDate ? taken : new Date(file.lastModified);
   return {
     lat: good ? gps.latitude : null,
     lng: good ? gps.longitude : null,
@@ -340,7 +300,6 @@ async function readPhotoInfo(file) {
   };
 }
 
-// 地図のポップアップの中身
 function makePopup(r, onPhoto) {
   const div = document.createElement('div');
   div.innerHTML = '<b></b><br><small></small><p></p>';
@@ -356,7 +315,6 @@ function makePopup(r, onPhoto) {
   return div;
 }
 
-// ---------- 部品：検索バー（OpenStreetMap の Nominatim） ----------
 function SearchBar({ onPick }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
@@ -372,16 +330,16 @@ function SearchBar({ onPick }) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const list = await res.json();
       setResults(list);
-      setMsg(list.length ? '' : '見つかりませんでした。「市名 町名」のように試してください');
+      setMsg(list.length ? '' : '見つかりませんでした。');
     } catch (err) {
-      setMsg('検索できませんでした。時間をおいて、もう一度試してください');
+      setMsg('検索できませんでした。時間をおいて試してください。');
     }
   }
 
   return (
     <div className="searchBar">
       <form className="searchForm" onSubmit={handleSubmit}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="場所を検索（例：京都駅、清水寺）" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="場所を検索（例：京都駅）" />
         <button type="submit">検索</button>
       </form>
       {msg && <div className="result">{msg}</div>}
@@ -396,27 +354,16 @@ function SearchBar({ onPick }) {
   );
 }
 
-// ---------- 部品：地図 ----------
 function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }) {
   const divRef = useRef(null), mapRef = useRef(null), groupRef = useRef(null), lineRef = useRef(null);
   const markersRef = useRef({}), tempRef = useRef(null);
 
-  // 最初の1回だけ：地図を作る
   useEffect(() => {
     const map = L.map(divRef.current).setView([36, 138], 5);
-    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxNativeZoom: 19, maxZoom: 21,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
-    });
-    const photo = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-      attribution: '&copy; 国土地理院', maxNativeZoom: 18, maxZoom: 21
-    });
-    const world = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri', maxNativeZoom: 18, maxZoom: 21
-    });
+    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 21 });
+    const photo = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { maxNativeZoom: 18, maxZoom: 21 });
     osm.addTo(map);
-    new MapTypes({ 'OpenStreetMap': osm, '航空写真（日本）': photo, '衛星写真（世界）': world }, osm).addTo(map);
-    // 近いピンは、数字つきの丸にまとめる（拡大すると、ばらける）。プラグインが読めないときは、そのまま表示
+    new MapTypes({ 'OpenStreetMap': osm, '航空写真': photo }, osm).addTo(map);
     groupRef.current = (L.markerClusterGroup ? L.markerClusterGroup({
       maxClusterRadius: 45, disableClusteringAtZoom: 16, showCoverageOnHover: false,
       iconCreateFunction: c => L.divIcon({ html: '<span>' + c.getChildCount() + '</span>', className: 'clusterIcon', iconSize: [38, 38] })
@@ -424,13 +371,11 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     lineRef.current = L.layerGroup().addTo(map);
     map.on('click', e => { Sound.play('pin'); onSelect(e.latlng); });
     mapRef.current = map;
-    // 左の欄の高さが変わったとき（スマホでスライドしたとき）に、地図の大きさを合わせ直す
     const ro = new ResizeObserver(() => map.invalidateSize());
     ro.observe(divRef.current);
     return () => { ro.disconnect(); map.remove(); };
   }, []);
 
-  // 記録が変わったら：ピンを作り直す（ポップアップは開いたときに作る）
   useEffect(() => {
     groupRef.current.clearLayers();
     lineRef.current.clearLayers();
@@ -438,11 +383,10 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     records.forEach(r => {
       if (!validLatLng(r.lat, r.lng)) return;
       const m = L.marker([r.lat, r.lng], { icon: r.n ? numPin(r.n) : PIN }).bindPopup(() => makePopup(r, onPhoto), { maxWidth: 150 });
-      m.on('click', () => Sound.play('select'));   // ピンを押したときの音
+      m.on('click', () => Sound.play('select'));
       groupRef.current.addLayer(m);
       markersRef.current[r.id] = m;
     });
-    // 同じ日の順番を、点線でつなぐ（records は、時刻順に並んでいる）
     const byDay = {};
     records.filter(r => r.n && validLatLng(r.lat, r.lng)).forEach(r => (byDay[r.date] = byDay[r.date] || []).push([r.lat, r.lng]));
     Object.values(byDay).forEach(pts => {
@@ -450,14 +394,12 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     });
   }, [records]);
 
-  // 旅行の切り替え・まとめて追加のあと：記録が全部見える位置へ
   useEffect(() => {
     const pts = records.filter(r => validLatLng(r.lat, r.lng)).map(r => [r.lat, r.lng]);
     if (!pts.length) return;
     try { mapRef.current.fitBounds(pts, { maxZoom: 15, padding: [40, 40] }); } catch (e) {}
   }, [tripId, fitKey]);
 
-  // 選んだ場所の仮ピン（クリックで取り消し）
   useEffect(() => {
     if (tempRef.current) { mapRef.current.removeLayer(tempRef.current); tempRef.current = null; }
     if (selected) {
@@ -466,13 +408,12 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     }
   }, [selected]);
 
-  // 一覧のカードが押されたら：滑らかに移動して、着いたらポップアップを開く
   useEffect(() => {
     if (!focus) return;
     const m = markersRef.current[focus.id];
     if (!m) return;
     const map = mapRef.current, target = m.getLatLng();
-    const showMarker = mk => groupRef.current.zoomToShowLayer ? groupRef.current.zoomToShowLayer(mk, () => mk.openPopup()) : mk.openPopup();   // まとまっているピンは、ばらけさせてから開く
+    const showMarker = mk => groupRef.current.zoomToShowLayer ? groupRef.current.zoomToShowLayer(mk, () => mk.openPopup()) : mk.openPopup();
     const zoom = Math.max(map.getZoom(), 16);
     if (map.getCenter().distanceTo(target) < 5 && map.getZoom() === zoom) { Sound.play('select'); showMarker(m); return; }
     map.once('moveend', () => showMarker(m));
@@ -480,12 +421,11 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
     map.flyTo(target, zoom, { duration: 1.5 });
   }, [focus]);
 
-  // 検索結果を選んだとき
   function handlePick(p) {
     Sound.play('move');
     const map = mapRef.current;
     if (p.boundingbox) {
-      const bb = p.boundingbox.map(Number);   // [南, 北, 西, 東]
+      const bb = p.boundingbox.map(Number);
       map.flyToBounds([[bb[0], bb[2]], [bb[1], bb[3]]], { maxZoom: 17, duration: 1.5 });
     } else {
       map.flyTo([Number(p.lat), Number(p.lon)], 17, { duration: 1.5 });
@@ -501,19 +441,17 @@ function MapView({ records, tripId, fitKey, selected, onSelect, focus, onPhoto }
   );
 }
 
-// ---------- 部品：入力フォーム（追加と編集を兼用） ----------
 function RecordForm({ selected, onAdd, editing, onUpdate, onCancel, trips }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [memo, setMemo] = useState('');
-  const [question, setQuestion] = useState('');   // クイズの質問（任意）
-  const [time, setTime] = useState('');           // 時刻（任意）
-  const [tripId, setTripId] = useState(null);     // 編集中：この記録の旅行（変えると、別の旅行へ移る）
-  const [kept, setKept] = useState([]);           // 編集中：残す写真 [{ t, k }]
+  const [question, setQuestion] = useState('');
+  const [time, setTime] = useState('');
+  const [tripId, setTripId] = useState(null);
+  const [kept, setKept] = useState([]);
   const [msg, setMsg] = useState('地図をクリックして場所を選んでください');
   const fileRef = useRef(null), formRef = useRef(null);
 
-  // 編集の対象が変わったら、フォームに今の内容を入れる
   useEffect(() => {
     if (fileRef.current) fileRef.current.value = '';
     if (editing) {
@@ -531,7 +469,6 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel, trips }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!editing && !selected) { setMsg('先に地図をクリックしてください！'); return; }
-    // 選んだ写真を読み込む（一覧用の画像と、高画質版）。写真ごとに、保管キーを付ける
     const added = [], fulls = [];
     for (const f of Array.from(fileRef.current.files)) {
       const pr = await readPhoto(f, 800);
@@ -539,16 +476,14 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel, trips }) {
       const k = Date.now() + '-' + added.length + '-' + Math.random().toString(36).slice(2, 6);
       added.push({ t: pr.thumb, k }); fulls.push({ k, blob: pr.full });
     }
-
-    if (editing) {   // 編集：変えたところだけ上書き
+    if (editing) {
       const photos = [...kept, ...added];
-      const removeKeys = getPhotos(editing).filter(p => !kept.some(x => x.k === p.k)).map(p => p.k);   // 外した写真の高画質版も消す
+      const removeKeys = getPhotos(editing).filter(p => !kept.some(x => x.k === p.k)).map(p => p.k);
       const changes = { title, date, time, memo, question, tripId, photos, photo: photos[0] ? photos[0].t : null, _fulls: fulls, _removeKeys: removeKeys };
       if (selected) { changes.lat = selected.lat; changes.lng = selected.lng; }
       onUpdate(editing.id, changes);
       return;
     }
-
     onAdd({ id: Date.now(), title, date, time, memo, question, lat: selected.lat, lng: selected.lng,
             photos: added, photo: added[0] ? added[0].t : null, _fulls: fulls });
     setTitle(''); setDate(''); setMemo(''); setQuestion(''); setTime('');
@@ -566,7 +501,7 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel, trips }) {
         <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="例：お昼ご飯は？" />
       </label>
       {editing && trips && (
-        <label>この記録の旅行（変えると、別の旅行へ移ります）
+        <label>この記録の旅行
           <select value={tripId || ''} onChange={e => setTripId(Number(e.target.value))}>
             {trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
@@ -595,17 +530,16 @@ function RecordForm({ selected, onAdd, editing, onUpdate, onCancel, trips }) {
   );
 }
 
-// ---------- 部品：写真のまとめて追加 ----------
 function BulkImport({ onAdd, selected }) {
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [pick, setPick] = useState({});   // 場所を設定する写真に選んだもの（key → true）
+  const [pick, setPick] = useState({});
 
   async function handleFiles(e) {
     let files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
     e.target.value = '';
     if (!files.length) return;
-    const MAX = 20;   // 一度に読み込む上限（スマホのメモリ対策）
+    const MAX = 20;
     if (files.length > MAX) {
       Dialog.alert('一度に読み込めるのは' + MAX + '枚までです。最初の' + MAX + '枚を読み込みます');
       files = files.slice(0, MAX);
@@ -617,21 +551,17 @@ function BulkImport({ onAdd, selected }) {
         const info = await readPhotoInfo(f);
         const pr = await readPhoto(f, 480);
         list.push({ key: f.name + f.size + f.lastModified, title: f.name.replace(/\.[^.]+$/, ''), photo: pr ? pr.thumb : null, full: pr ? pr.full : null, ...info });
-        await new Promise(r => setTimeout(r, 80));   // メモリを片付ける時間
+        await new Promise(r => setTimeout(r, 80));
       }
       list.sort((a, b) => a.ts - b.ts);
       setItems(list);
-    } catch (err) {
-      Dialog.alert('写真の読み込み中に問題が起きました：' + err.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (err) { Dialog.alert('写真の読み込み中に問題が起きました：' + err.message); } finally { setBusy(false); }
   }
 
-  const ok = items.filter(i => validLatLng(i.lat, i.lng) && i.photo);       // 位置情報あり
-  const noGps = items.filter(i => !validLatLng(i.lat, i.lng) && i.photo);   // 位置情報なし
+  const ok = items.filter(i => validLatLng(i.lat, i.lng) && i.photo);
+  const noGps = items.filter(i => !validLatLng(i.lat, i.lng) && i.photo);
   const broken = items.filter(i => !i.photo).length;
-  const chosen = noGps.filter(i => pick[i.key]);   // 選んだ、位置情報のない写真
+  const chosen = noGps.filter(i => pick[i.key]);
 
   function toRecords(list, lat, lng) {
     return list.map((i, n) => ({
@@ -639,11 +569,8 @@ function BulkImport({ onAdd, selected }) {
       lat: lat !== undefined ? lat : i.lat, lng: lng !== undefined ? lng : i.lng, photo: i.photo, _full: i.full
     }));
   }
-  function importAll() {
-    onAdd(toRecords(ok));
-    setItems(items.filter(i => !ok.includes(i)));
-  }
-  function importToSelected() {   // 選んだ写真だけを、地図で選んだ場所へ（残りは、別の場所を選んで、くり返せる）
+  function importAll() { onAdd(toRecords(ok)); setItems(items.filter(i => !ok.includes(i))); }
+  function importToSelected() {
     onAdd(toRecords(chosen, selected.lat, selected.lng));
     setItems(items.filter(i => !chosen.includes(i)));
     setPick({});
@@ -659,12 +586,10 @@ function BulkImport({ onAdd, selected }) {
         <input type="file" webkitdirectory="" multiple onChange={handleFiles} />
       </label>
       {busy && <div className="msg">読み込み中...</div>}
-
       {items.map(i => (
         <div className="record" key={i.key} style={{ cursor: 'default' }}>
           {i.photo ? <img src={i.photo} /> : <div className="msg">読み込めない形式です</div>}
-          <input value={i.title}
-                 onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
+          <input value={i.title} onChange={e => setItems(items.map(x => x.key === i.key ? { ...x, title: e.target.value } : x))} />
           <small>{i.date}{i.time ? ' ' + i.time : ''}{i.dateFromExif ? '（撮影日時）' : '（ファイルの更新日）'}</small><br />
           <small className={validLatLng(i.lat, i.lng) ? 'tag ok' : 'tag ng'}>{validLatLng(i.lat, i.lng) ? '位置情報あり' : '位置情報なし'}</small>
           {!validLatLng(i.lat, i.lng) && i.photo && (
@@ -675,7 +600,6 @@ function BulkImport({ onAdd, selected }) {
           )}
         </div>
       ))}
-
       {ok.length > 0 && <button onClick={importAll}>位置情報のある{ok.length}件を記録する</button>}
       {noGps.length > 0 && (
         <div className="pickBar">
@@ -697,20 +621,18 @@ function BulkImport({ onAdd, selected }) {
   );
 }
 
-// ---------- 部品：写真の拡大表示（写真と情報を、画面いっぱいに重ねて見せる） ----------
 function Lightbox({ record, tripName, onClose }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => { Sound.play('open'); return () => Sound.play('close'); }, []);   // 開いたとき・閉じたときの音
-  // 高画質版（この端末のIndexedDB）があれば、読み込んで差し替える
+  useEffect(() => { Sound.play('open'); return () => Sound.play('close'); }, []);
   const photos = getPhotos(record);
-  const [pi, setPi] = useState(0);   // 何枚目を見ているか
+  const [pi, setPi] = useState(0);
   const cur = photos[Math.min(pi, photos.length - 1)] || { t: record.photo, k: record.id };
   const [src, setSrc] = useState(cur.t);
-  const [hq, setHq] = useState(null);   // null：確認中 / true：高画質 / false：高画質版なし
+  const [hq, setHq] = useState(null);
   useEffect(() => {
     setSrc(cur.t); setHq(null);
     let alive = true, url = null;
@@ -720,8 +642,6 @@ function Lightbox({ record, tripName, onClose }) {
     });
     return () => { alive = false; if (url) URL.revokeObjectURL(url); };
   }, [cur.k]);
-  // createPortal：部品の位置に関係なく、画面全体（body）の上に描く
-  // ※ 押した操作が、下のカードなどに伝わらないよう、stopPropagation を使っている
   return ReactDOM.createPortal(
     <div className="lightbox" onClick={e => { e.stopPropagation(); onClose(); }}>
       <figure className="lightboxBody" onClick={e => e.stopPropagation()}>
@@ -745,10 +665,9 @@ function Lightbox({ record, tripName, onClose }) {
   );
 }
 
-// ---------- 部品：記録1件のカード ----------
-function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
-  const [zoom, setZoom] = useState(false);   // 写真を拡大中か
-  const [gone, setGone] = useState(false);   // 削除するとき、先にふわっと消す
+function RecordCard({ record, isEditing, isViewOnly, onFocus, onEdit, onDelete }) {
+  const [zoom, setZoom] = useState(false);
+  const [gone, setGone] = useState(false);
   async function remove(e) {
     e.stopPropagation();
     if (!(await Dialog.confirm('「' + record.title + '」を削除しますか？', { danger: true, okText: '削除する' }))) return;
@@ -766,21 +685,19 @@ function RecordCard({ record, isEditing, onFocus, onEdit, onDelete }) {
           <b>{record.title}</b>
           <small>{record.date}{record.time ? ' ' + record.time : ''}{getPhotos(record).length > 1 ? '　写真' + getPhotos(record).length + '枚' : ''}</small>
           {record.question && <small className="qline">問：{record.question}</small>}
-          <div>
+          {!isViewOnly && <div>
             <button className="edit" onClick={e => { e.stopPropagation(); onEdit(record.id); }}>編集</button>
             <button className="del" onClick={remove}>削除</button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>
   );
 }
 
-// ---------- 画面：タイトル（登録・クイズを選ぶ） ----------
-// 流れる丸い写真（タイトル画面）。タップすると、写真の情報が出る
 function Marquee({ items, reverse, onPick }) {
   const base = [];
-  while (base.length < 10) base.push(...items);   // 写真が少ないときは、くり返して幅を埋める
+  while (base.length < 10) base.push(...items);
   return (
     <div className={'marquee' + (reverse ? ' rev' : '')}>
       <div className="marqueeTrack">
@@ -792,11 +709,10 @@ function Marquee({ items, reverse, onPick }) {
   );
 }
 
-function Home({ trips, records, onGo, onReset }) {
+function Home({ trips, records, onGo, onReset, isViewOnly }) {
   const photoCount = records.filter(r => r.photo).length;
   const days = daysSinceBackup();
-  const [view, setView] = useState(null);   // タップした写真の記録
-  // 流す写真は最大8枚（スマホのメモリ対策）
+  const [view, setView] = useState(null);
   const bubbles = useMemo(() => shuffle(records.filter(r => r.photo)).slice(0, 8), [records]);
   const trip = view && trips.find(t => t.id === view.tripId);
   return (
@@ -811,7 +727,8 @@ function Home({ trips, records, onGo, onReset }) {
           <div><b>{records.length}</b><span>記録</span></div>
           <div><b>{photoCount}</b><span>写真</span></div>
         </div>
-        <button className="homeBtn" onClick={() => onGo('register')}>
+        {isViewOnly && <div className="msg" style={{textAlign:"center",marginBottom:12}}>※ 閲覧専用モードです。編集はできません。</div>}
+        <button className="homeBtn" disabled={isViewOnly} onClick={() => onGo('register')}>
           <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で旅の記録を登録・編集</small>
         </button>
         <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
@@ -821,37 +738,28 @@ function Home({ trips, records, onGo, onReset }) {
         <button className="homeBtn" disabled={photoCount < 1} onClick={() => onGo('gallery')}>
           <span className="homeBtnTitle">旅の写真をスライドショーで見る</span><small>旅ごとの写真の振り返り</small>
         </button>
-        <button className="homeBtn" onClick={() => onGo('data')}>
+        <button className="homeBtn" disabled={isViewOnly} onClick={() => onGo('data')}>
           <span className="homeBtnTitle">データの保存・共有</span>
           <small>{days === null ? 'まだバックアップがありません。ファイルに書き出して保管しましょう' : days >= 30 ? days + '日前にバックアップしました。そろそろ書き出しましょう' : '最後のバックアップ：' + (days === 0 ? '今日' : days + '日前')}</small>
         </button>
       </div>
-      <div className="resetRow"><button className="ghost danger" onClick={onReset}>すべての記録をリセット</button></div>
+      <div className="resetRow">{!isViewOnly && <button className="ghost danger" onClick={onReset}>すべての記録をリセット</button>}</div>
       {bubbles.length > 0 && <Marquee items={bubbles.slice().reverse()} onPick={setView} />}
       {view && <Lightbox record={view} tripName={trip ? trip.name : ''} onClose={() => setView(null)} />}
     </div>
   );
 }
 
-// ---------- クイズの問題を作る ----------
-const HIT_M = 2000;   // 「場所を選ぶ」問題：正解の場所から、この距離（m）以内なら正解
-
+const HIT_M = 2000;
 function shuffle(arr) {
   const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-
 function tripHeader(trips, tripId) {
   const t = trips.find(x => x.id === tripId);
   return t ? '旅行：' + t.name : '';
 }
-
-// 時刻つきの記録を「旅行・日付・時間帯」ごとにまとめる
-// style: 'hour'＝12時台でまとめる / 'exact'＝12:30のように、同じ時刻でまとめる
 function timeGroups(records, style) {
   const map = {};
   records.forEach(r => {
@@ -865,13 +773,11 @@ function timeGroups(records, style) {
 }
 function slotLabel(g, style) { return style === 'hour' ? Number(g.slot) + '時台' : g.slot + ' ごろ'; }
 
-// ① 質問・タイトルから、写真を選ぶ問題
 function makeQuestions(pool, allPhotos, count, trips, favCustom, weak) {
-  // 自作の質問つきの記録を先に並べる（favCustom がオンのとき）
-  const base = prio(pool, [weak, favCustom ? r => r.question : null]);   // 苦手な記録 → 自作の質問 → ほか、の順
+  const base = prio(pool, [weak, favCustom ? r => r.question : null]);
   return base.slice(0, count).map(r => {
     const others = allPhotos.filter(x => x.id !== r.id && x.photo !== r.photo);
-    const same = shuffle(others.filter(x => x.tripId === r.tripId));   // 同じ旅行の写真を優先
+    const same = shuffle(others.filter(x => x.tripId === r.tripId));
     const diff = shuffle(others.filter(x => x.tripId !== r.tripId));
     return {
       type: 'photo', record: r,
@@ -881,8 +787,6 @@ function makeQuestions(pool, allPhotos, count, trips, favCustom, weak) {
     };
   });
 }
-
-// ② 時間から、いた場所を地図で選ぶ問題
 function makePlaceQuestions(groups, trips, count, style, weak) {
   return prio(groups, [weak && (g => g.records.some(weak))]).slice(0, count).map(g => ({
     type: 'place', answers: g.records, circle: hintCircle(g.records[0]),
@@ -890,8 +794,6 @@ function makePlaceQuestions(groups, trips, count, style, weak) {
     text: g.date + ' の ' + slotLabel(g, style) + 'はどこにいた？'
   }));
 }
-
-// ③ 時間から、いた場所の写真を選ぶ問題
 function makeTimePhotoQuestions(groups, allPhotos, trips, count, style, weak) {
   return prio(groups, [weak && (g => g.records.some(weak))]).slice(0, count).map(g => {
     const ids = g.records.map(r => r.id);
@@ -907,14 +809,8 @@ function makeTimePhotoQuestions(groups, allPhotos, trips, count, style, weak) {
     };
   });
 }
-
 function fmtDist(d) { return d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km'; }
-// 答えの場所から、一番近い正解までの距離（正解が複数あるときは、近いほうで判定）
-function nearestDist(guess, answers) {
-  return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng))));
-}
-
-// 自作の質問つきで、写真のない記録：質問を出して、答えの場所を地図で選んでもらう
+function nearestDist(guess, answers) { return Math.min(...answers.map(a => guess.distanceTo(L.latLng(a.lat, a.lng)))); }
 function makeCustomPlaceQuestions(pool, trips, count) {
   return shuffle(pool).slice(0, count).map(r => ({
     type: 'place', custom: true, answers: [r], circle: hintCircle(r),
@@ -922,25 +818,21 @@ function makeCustomPlaceQuestions(pool, trips, count) {
     text: r.question + '（答えの場所を、地図で選んでください）'
   }));
 }
-
-// 「場所の範囲」のヒント：正解が入るが、中心ではない円（正解がばれないように、中心をずらす）
 function hintCircle(r) {
-  const ang = Math.random() * 2 * Math.PI, off = 2000 * (0.4 + 0.6 * Math.random());   // 中心を、最大1.5kmずらす
+  const ang = Math.random() * 2 * Math.PI, off = 2000 * (0.4 + 0.6 * Math.random());
   return {
     lat: r.lat + (off * Math.cos(ang)) / 111320,
     lng: r.lng + (off * Math.sin(ang)) / (111320 * Math.cos(r.lat * Math.PI / 180)),
-    r: 4000   // 半径4km
+    r: 4000
   };
 }
-
-// 問題ごとのヒント（上から順に、見せていく）
 function makeHints(q) {
   const out = [];
   if (q.type === 'place') {
     const memo = q.answers.find(x => x.memo), pic = q.answers.find(x => x.photo);
     if (memo) out.push({ kind: 'text', label: 'メモ', text: memo.memo });
     out.push({ kind: 'circle', label: '場所の範囲' });
-    if (pic) out.push({ kind: 'photo', label: '写真', photo: pic.photo });
+    if (pic) out.push({ kind: 'photo', label: '写真', record: pic });
     out.push({ kind: 'text', label: '場所の名前', text: q.answers.map(x => x.title).join('、') });
   } else {
     const r = q.record, seen = q.text + q.header;
@@ -952,17 +844,14 @@ function makeHints(q) {
   return out;
 }
 
-// ---------- 部品：答えの場所を選ぶ地図 ----------
 function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
   const divRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null), hintRef = useRef(null);
   const onGuessRef = useRef(onGuess);
-  onGuessRef.current = onGuess;   // いつも最新の関数を使えるようにしておく
+  onGuessRef.current = onGuess;
 
   useEffect(() => {
     const map = L.map(divRef.current).setView([36, 138], 5);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 21 }).addTo(map);
     hintRef.current = L.layerGroup().addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     if (startPts.length) map.fitBounds(startPts, { padding: [30, 30], maxZoom: 12 });
@@ -976,20 +865,17 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
     const g = layerRef.current;
     g.clearLayers();
     if (guess) {
-      L.circleMarker(guess, { radius: 9, color: '#14213d', fillOpacity: 0.8 })
-        .addTo(g).bindTooltip('あなたの答え', { permanent: revealed });
+      L.circleMarker(guess, { radius: 9, color: '#14213d', fillOpacity: 0.8 }).addTo(g).bindTooltip('あなたの答え', { permanent: revealed });
     }
     if (revealed && guess) {
       const pts = answers.map(a => L.latLng(a.lat, a.lng));
-      pts.forEach(pt => L.circleMarker(pt, { radius: 9, color: '#2f6b4f', fillOpacity: 0.8 })
-        .addTo(g).bindTooltip('正解の場所', { permanent: true }));
+      pts.forEach(pt => L.circleMarker(pt, { radius: 9, color: '#2f6b4f', fillOpacity: 0.8 }).addTo(g).bindTooltip('正解の場所', { permanent: true }));
       const near = pts.reduce((a, b) => guess.distanceTo(a) <= guess.distanceTo(b) ? a : b);
       L.polyline([guess, near], { color: '#888', dashArray: '6' }).addTo(g);
       mapRef.current.fitBounds([guess, ...pts], { padding: [60, 60], maxZoom: 16 });
     }
   }, [guess, revealed, ansKey]);
 
-  // ヒント：答えが入っている範囲の円（円の上をタップしても、答えを選べます）
   const hintKey = hintCircle ? hintCircle.lat + ',' + hintCircle.lng : '';
   useEffect(() => {
     const g = hintRef.current;
@@ -999,7 +885,6 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
     mapRef.current.flyToBounds(c.getBounds(), { padding: [30, 30], duration: 0.8 });
   }, [hintKey]);
 
-  // 検索バーで見つけた場所へ地図を動かすだけ（答えにはならない）
   function flyTo(p) {
     Sound.play('move');
     const map = mapRef.current;
@@ -1010,27 +895,18 @@ function GuessMap({ guess, onGuess, revealed, answers, startPts, hintCircle }) {
       map.flyTo([Number(p.lat), Number(p.lon)], 14, { duration: 1 });
     }
   }
-
-  return (
-    <>
-      <div ref={divRef} style={{ position: 'absolute', inset: 0 }}></div>
-      <SearchBar onPick={flyTo} />
-    </>
-  );
+  return <><div ref={divRef} style={{ position: 'absolute', inset: 0 }}></div><SearchBar onPick={flyTo} /></>;
 }
 
-// ---------- 部品：結果の地図（正解の場所を、番号つきでまとめて表示） ----------
 function ResultMap({ points, active }) {
   const divRef = useRef(null), mapRef = useRef(null), markersRef = useRef([]);
   useEffect(() => {
     const map = L.map(divRef.current).setView([36, 138], 5);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxNativeZoom: 19, maxZoom: 21, attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 21 }).addTo(map);
     const latlngs = [];
     points.forEach(pt => {
       const tip = document.createElement('span');
-      tip.textContent = pt.n + '. ' + pt.title;   // textContent で入れる（タイトルに記号があっても安全）
+      tip.textContent = pt.n + '. ' + pt.title;
       const m = L.marker([pt.lat, pt.lng], { icon: numPin(pt.n) }).addTo(map).bindTooltip(tip);
       markersRef.current.push({ n: pt.n, m });
       latlngs.push([pt.lat, pt.lng]);
@@ -1042,7 +918,6 @@ function ResultMap({ points, active }) {
     return () => { ro.disconnect(); map.remove(); };
   }, []);
 
-  // 問題がタップされたら：その問題のピンを大きく光らせ、地図をそこへ動かす
   useEffect(() => {
     if (!active) return;
     Sound.play('move');
@@ -1053,7 +928,7 @@ function ResultMap({ points, active }) {
       x.m.setIcon(numPin(x.n, on));
       x.m.setZIndexOffset(on ? 1000 : 0);
     });
-    divRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });   // 地図が見える位置まで、画面を動かす
+    divRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if (hit.length === 1) { map.flyTo(hit[0].m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 1 }); hit[0].m.openTooltip(); }
     else if (hit.length > 1) map.flyToBounds(hit.map(x => x.m.getLatLng()), { padding: [50, 50], maxZoom: 16, duration: 1 });
   }, [active]);
@@ -1061,37 +936,35 @@ function ResultMap({ points, active }) {
   return <div className="guessMap"><div ref={divRef} style={{ position: 'absolute', inset: 0 }}></div></div>;
 }
 
-// ---------- 画面：クイズ ----------
 function Quiz({ records, trips, currentTripId, onExit }) {
-  const [phase, setPhase] = useState('setup');   // setup → play → result
-  const [kinds, setKinds] = useState({ photo: true, place: true, timePhoto: true });   // 問題の種類（複数選べる）
-  const [timeStyle, setTimeStyle] = useState('hour');   // 'hour'＝12時台 / 'exact'＝12:30ごろ
-  const [tripSel, setTripSel] = useState('all');        // 'all'＝すべての旅行を混ぜる / 旅行のid
+  const [phase, setPhase] = useState('setup');
+  const [kinds, setKinds] = useState({ photo: true, place: true, timePhoto: true });
+  const [timeStyle, setTimeStyle] = useState('hour');
+  const [tripSel, setTripSel] = useState('all');
   const [count, setCount] = useState(5);
-  const [favCustom, setFavCustom] = useState(true);   // 自作の質問を優先する
+  const [favCustom, setFavCustom] = useState(true);
   const [qs, setQs] = useState([]);
   const [idx, setIdx] = useState(0);
-  const [picked, setPicked] = useState(null);    // 写真問題：選んだ記録のid
-  const [guess, setGuess] = useState(null);      // 場所問題：地図で選んだ場所
+  const [picked, setPicked] = useState(null);
+  const [guess, setGuess] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
-  const [results, setResults] = useState([]);   // 問題ごとの、正解・不正解（結果画面で使う）
-  const [hintLevel, setHintLevel] = useState(0);   // いま見せているヒントの数
-  const [hintLog, setHintLog] = useState([]);       // 問題ごとの、使ったヒントの数
-  const [stats, setStats] = useState(loadStats);   // これまでの成績
-  const [review, setReview] = useState(false);     // 間違えた記録を優先する（復習）
-  useEffect(() => { if (phase === 'result') { recordRun(qs, results, score); setStats(loadStats()); } }, [phase]);   // 結果画面になったら、成績を保存
-  const [active, setActive] = useState(null);       // 結果画面で、強調している問題
-  const [lb, setLb] = useState(null);            // 結果画面で、拡大している写真の記録
+  const [results, setResults] = useState([]);
+  const [hintLevel, setHintLevel] = useState(0);
+  const [hintLog, setHintLog] = useState([]);
+  const [stats, setStats] = useState(loadStats);
+  const [review, setReview] = useState(false);
+  useEffect(() => { if (phase === 'result') { recordRun(qs, results, score); setStats(loadStats()); } }, [phase]);
+  const [active, setActive] = useState(null);
+  const [lb, setLb] = useState(null);
 
   const inTrip = r => tripSel === 'all' || String(r.tripId) === tripSel;
   const withPhoto = records.filter(r => r.photo);
   const photoPool = withPhoto.filter(inTrip);
-  const weakCount = records.filter(r => inTrip(r) && isWeak(stats, r.id)).length;   // 間違いの多い記録
-  const myQ = records.filter(r => inTrip(r) && r.question);                                       // 自作の質問つきの記録
-  const customPlace = myQ.filter(r => !r.photo && validLatLng(r.lat, r.lng));                     // うち、写真がないもの
+  const weakCount = records.filter(r => inTrip(r) && isWeak(stats, r.id)).length;
+  const myQ = records.filter(r => inTrip(r) && r.question);
+  const customPlace = myQ.filter(r => !r.photo && validLatLng(r.lat, r.lng));
   const groups = timeGroups(records.filter(inTrip), timeStyle);
-  // 「時間から写真」：その時間帯に写真があり、ほかに選択肢にできる写真もあるもの
   const tpGroups = groups.filter(g => {
     const n = g.records.filter(r => r.photo).length;
     return n > 0 && withPhoto.length > n;
@@ -1105,14 +978,13 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     if (kinds.photo) list = list.concat(makeCustomPlaceQuestions(customPlace, trips, count));
     if (kinds.place) list = list.concat(makePlaceQuestions(groups, trips, count, timeStyle, review ? (r => isWeak(stats, r.id)) : null));
     if (kinds.timePhoto) list = list.concat(makeTimePhotoQuestions(tpGroups, withPhoto, trips, count, timeStyle, review ? (r => isWeak(stats, r.id)) : null));
-    // 自作の質問は、必ず先に選ぶ。残りの枠を、ほかの問題で埋める
     const mine = list.filter(x => (favCustom && (x.custom || (x.type === 'photo' && x.record.question))) ||
-      (review && (x.type === 'place' ? x.answers : [x.record]).some(r => isWeak(stats, r.id))));   // 優先する問題（自作の質問・苦手な記録）
+      (review && (x.type === 'place' ? x.answers : [x.record]).some(r => isWeak(stats, r.id))));
     const others = shuffle(list.filter(x => !mine.includes(x)));
-    setQs(shuffle([...shuffle(mine), ...others].slice(0, count)));   // 最後にシャッフルして、種類を混ぜる
+    setQs(shuffle([...shuffle(mine), ...others].slice(0, count)));
     setIdx(0); setPicked(null); setGuess(null); setRevealed(false); setScore(0); setResults([]); setHintLog([]); setHintLevel(0); setActive(null); setPhase('play');
   }
-  function answer(c) {   // 写真問題
+  function answer(c) {
     if (picked) return;
     setPicked(c.id);
     const ok = c.id === qs[idx].record.id;
@@ -1121,7 +993,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     setHintLog(h => [...h, hintLevel]);
     if (ok) setScore(s => s + 1);
   }
-  function submitGuess() {   // 場所問題
+  function submitGuess() {
     if (!guess || revealed) return;
     setRevealed(true);
     const hit = nearestDist(guess, qs[idx].answers) <= HIT_M;
@@ -1132,7 +1004,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   }
   function next() {
     if (idx + 1 >= qs.length) {
-      if (score >= qs.length / 2) Sound.play('finish');   // 半分以上正解で、ファンファーレ
+      if (score >= qs.length / 2) Sound.play('finish');
       setPhase('result'); return;
     }
     setIdx(idx + 1); setPicked(null); setGuess(null); setRevealed(false); setHintLevel(0);
@@ -1142,61 +1014,66 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     <div className="screen"><div className="inner">
       <button className="ghost" onClick={onExit}>‹ タイトルへ</button>
       <h2>旅の記憶クイズ</h2>
-
+      
       <label>問題を出題する旅行（「すべての旅行」で全部を混ぜて出題します）
         <select value={tripSel} onChange={e => setTripSel(e.target.value)}>
           <option value="all">すべての旅行（混ぜる）</option>
           {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
         </select>
       </label>
-
-      <div style={{ marginTop: 10, fontSize: 13 }}>問題の種類（複数選ぶと混ぜて出題します）</div>
-      {[['photo', '質問・タイトルから写真を選ぶ'],
-        ['place', '時間からその時に居た場所を"地図"で選ぶ'],
-        ['timePhoto', '時間からその時にいた場所の"写真"を選ぶ']].map(([k, label]) => (
-        <label key={k}>
-          <input type="checkbox" checked={kinds[k]} style={{ width: 'auto' }}
-                 onChange={e => setKinds({ ...kinds, [k]: e.target.checked })} /> {label}
-        </label>
-      ))}
-
-      {(kinds.place || kinds.timePhoto) && (
-        <label>時間の聞き方
-          <select value={timeStyle} onChange={e => setTimeStyle(e.target.value)}>
-            <option value="hour">（大まかな時間  例:12時台）</option>
-            <option value="exact"> 細かな時刻 （例：12:30頃）</option>
-          </select>
-        </label>
-      )}
-
-      <div className="dataCard" style={{ marginTop: 12 }}>
-        成績：{stats.runs.length}回挑戦
-        {stats.runs.length > 0 && '／平均正答率 ' + Math.round(stats.runs.reduce((a, r) => a + r.score / r.total, 0) / stats.runs.length * 100) + '%'}
-        <div>間違いの多い記録：{weakCount}件</div>
-        {stats.runs.length > 0 && (
-          <button className="ghost" style={{ marginTop: 8 }} onClick={async () => {
-            if (await Dialog.confirm('クイズの成績をすべて消します。よろしいですか？', { danger: true, okText: '消す' })) { localStorage.removeItem(STATS_KEY); setStats(loadStats()); }
-          }}>成績を消す</button>
-        )}
-      </div>
-      <label>
-        <input type="checkbox" checked={review} style={{ width: 'auto' }} onChange={e => setReview(e.target.checked)} /> 間違えた記録を優先して出題する（復習）
-      </label>
-      <label>
-        <input type="checkbox" checked={favCustom} style={{ width: 'auto' }} onChange={e => setFavCustom(e.target.checked)} /> 自分で作った質問を、優先して出題する
-      </label>
-      <p style={{ fontSize: 12, color: '#666', margin: '2px 0 0' }}>
-        自作の質問つきの記録：{myQ.length}件（うち写真なし{customPlace.length}件は、地図で場所を選ぶ問題になります）
-      </p>
+      
       <label>問題数
         <select value={count} onChange={e => setCount(Number(e.target.value))}>
           {[3, 5, 10].map(n => <option key={n} value={n}>{n}問</option>)}
         </select>
       </label>
 
-      <p style={{ fontSize: 13 }}>
-        出題できる数：写真（質問・タイトル）{photoPool.length} ／ 時間から場所 {groups.length} ／ 時間から写真 {tpGroups.length}
-      </p>
+      <details className="acc">
+        <summary>詳細設定（出題範囲・難易度など）</summary>
+        <div className="accBody">
+          <div style={{ marginTop: 10, fontSize: 13 }}>問題の種類（複数選ぶと混ぜて出題します）</div>
+          {[['photo', '質問・タイトルから写真を選ぶ'],
+            ['place', '時間からその時に居た場所を"地図"で選ぶ'],
+            ['timePhoto', '時間からその時にいた場所の"写真"を選ぶ']].map(([k, label]) => (
+            <label key={k}>
+              <input type="checkbox" checked={kinds[k]} style={{ width: 'auto' }}
+                     onChange={e => setKinds({ ...kinds, [k]: e.target.checked })} /> {label}
+            </label>
+          ))}
+          {(kinds.place || kinds.timePhoto) && (
+            <label>時間の聞き方
+              <select value={timeStyle} onChange={e => setTimeStyle(e.target.value)}>
+                <option value="hour">（大まかな時間  例:12時台）</option>
+                <option value="exact"> 細かな時刻 （例：12:30頃）</option>
+              </select>
+            </label>
+          )}
+
+          <div className="dataCard" style={{ marginTop: 12 }}>
+            成績：{stats.runs.length}回挑戦
+            {stats.runs.length > 0 && '／平均正答率 ' + Math.round(stats.runs.reduce((a, r) => a + r.score / r.total, 0) / stats.runs.length * 100) + '%'}
+            <div>間違いの多い記録：{weakCount}件</div>
+            {stats.runs.length > 0 && (
+              <button className="ghost" style={{ marginTop: 8 }} onClick={async () => {
+                if (await Dialog.confirm('クイズの成績をすべて消します。よろしいですか？', { danger: true, okText: '消す' })) { localStorage.removeItem(STATS_KEY); setStats(loadStats()); }
+              }}>成績を消す</button>
+            )}
+          </div>
+          <label>
+            <input type="checkbox" checked={review} style={{ width: 'auto' }} onChange={e => setReview(e.target.checked)} /> 間違えた記録を優先して出題する（復習）
+          </label>
+          <label>
+            <input type="checkbox" checked={favCustom} style={{ width: 'auto' }} onChange={e => setFavCustom(e.target.checked)} /> 自分で作った質問を、優先して出題する
+          </label>
+          <p style={{ fontSize: 12, color: '#666', margin: '2px 0 0' }}>
+            自作の質問つきの記録：{myQ.length}件（うち写真なし{customPlace.length}件は、地図で場所を選ぶ問題になります）
+          </p>
+          <p style={{ fontSize: 13 }}>
+            出題できる数：写真（質問・タイトル）{photoPool.length} ／ 時間から場所 {groups.length} ／ 時間から写真 {tpGroups.length}
+          </p>
+        </div>
+      </details>
+
       {kinds.photo && withPhoto.length < 2 && <p className="msg">写真の問題には、写真つきの記録が2件以上必要です</p>}
       {(kinds.place || kinds.timePhoto) && groups.length === 0 &&
         <p className="msg">時間の問題には、「時刻」を入れた記録が必要です（記録の「編集」で入れられます）</p>}
@@ -1224,7 +1101,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
           <div className="hintItem" key={i}>
             <span className="hintLabel">ヒント{i + 1}：{h.label}</span>
             {h.kind === 'text' && <span>{h.text}</span>}
-            {h.kind === 'photo' && <img className="hintPhoto" src={h.photo} alt="" />}
+            {h.kind === 'photo' && <HQImage className="hintPhoto" record={h.record} alt="" />}
             {h.kind === 'circle' && <span>地図の円の中に、答えがあります</span>}
             {h.kind === 'fifty' && <span>違う写真を、2枚薄くしました</span>}
           </div>
@@ -1233,7 +1110,6 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     );
     const bar = <div className="quizHeader">第{idx + 1}問 / {qs.length}　正解 {score}</div>;
 
-    // ---- 時間から、いた場所を選ぶ問題 ----
     if (q.type === 'place') {
       const d = revealed && guess ? nearestDist(guess, q.answers) : 0;
       const pic = q.answers.find(a => a.photo);
@@ -1260,7 +1136,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
               <div>正解の場所まで {fmtDist(d)}（{fmtDist(HIT_M)}以内で正解）</div>
               {q.answers.map(a => <div key={a.id}>{a.time} ／ {a.title}</div>)}
               {memo && <div style={{ fontSize: 13 }}>{memo.memo}</div>}
-              {pic && <img src={pic.photo} style={{ width: '100%', borderRadius: 6, marginTop: 6 }} />}
+              {pic && <HQImage record={pic} style={{ width: '100%', borderRadius: 6, marginTop: 6 }} />}
               <button onClick={next}>{idx + 1 >= qs.length ? '結果を見る' : '次の問題へ'}</button>
             </div>
           )}
@@ -1268,7 +1144,6 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       );
     }
 
-    // ---- 写真を選ぶ問題（質問・タイトルから／時間から） ----
     const r = q.record;
     return (
       <div className="screen"><div className="inner fade" key={idx}>
@@ -1285,7 +1160,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
             }
             const out = fiftyOn && elimIds.includes(c.id);
             if (out) cls += ' out';
-            return <button key={c.id} disabled={out} className={cls} data-silent="1" onClick={() => answer(c)}><img src={c.photo} /></button>;
+            return <button key={c.id} disabled={out} className={cls} data-silent="1" onClick={() => answer(c)}><HQImage record={c} /></button>;
           })}
         </div>
         {picked && (
@@ -1300,7 +1175,6 @@ function Quiz({ records, trips, currentTripId, onExit }) {
     );
   }
 
-  // ---- 結果：正解の写真と、場所の地図 ----
   const rows = qs.map((q, i) => ({ n: i + 1, q, ok: results[i], hints: hintLog[i] || 0, recs: q.type === 'place' ? q.answers : [q.record] }));
   const points = rows.flatMap(row => row.recs.filter(r => validLatLng(r.lat, r.lng)).map(r => ({ n: row.n, lat: r.lat, lng: r.lng, title: r.title })));
   return (
@@ -1308,10 +1182,8 @@ function Quiz({ records, trips, currentTripId, onExit }) {
       <h2>結果</h2>
       <p className="score">{score} / {qs.length} 問正解</p>
       <p>{score === qs.length ? '全問正解！良い旅行になりましたね！' : score >= qs.length / 2 ? 'その調子！もっと記憶を掘り返してみよう！' : 'その旅行、意味ありました？覚えてない旅行は意味がなくなっちゃうよ。'}</p>
-
       <h3 className="subhead">正解の場所</h3>
       <ResultMap points={points} active={active} />
-
       <h3 className="subhead">問題と、正解の写真（問題をタップすると、地図で強調します）</h3>
       {rows.map(row => {
         const r = row.recs.find(x => x.photo) || row.recs[0];
@@ -1320,7 +1192,7 @@ function Quiz({ records, trips, currentTripId, onExit }) {
                onClick={() => setActive({ n: row.n, t: Date.now() })}>
             <span className="resultNo">{row.n}</span>
             {r.photo
-              ? <img className="thumb" src={r.photo} alt="写真を大きく表示" onClick={e => { e.stopPropagation(); setLb(r); }} />
+              ? <HQImage record={r} className="thumb" alt="写真を大きく表示" onClick={e => { e.stopPropagation(); setLb(r); }} />
               : <span className="thumb blank" />}
             <div className="resultBody">
               <div className={'resultMark ' + (row.ok ? 'ok' : 'ng')}>{row.ok ? '正解' : '不正解'}
@@ -1331,7 +1203,6 @@ function Quiz({ records, trips, currentTripId, onExit }) {
           </div>
         );
       })}
-
       <div className="resultActions">
         <button className="bigBtn" onClick={start}>もう一度挑戦（問題を作り直す）</button>
         <div className="resultActions2">
@@ -1344,11 +1215,10 @@ function Quiz({ records, trips, currentTripId, onExit }) {
   );
 }
 
-// ---------- 画面：データの保存・共有（バックアップ） ----------
 function DataScreen({ trips, records, onImport, onExit }) {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState('merge');   // 'merge'＝今の記録に追加 / 'replace'＝置き換え
+  const [mode, setMode] = useState('merge');
   const [usage, setUsage] = useState('');
   const days = daysSinceBackup();
   const recBytes = new Blob([localStorage.getItem(STORAGE_KEY) || '']).size;
@@ -1359,7 +1229,6 @@ function DataScreen({ trips, records, onImport, onExit }) {
     }
   }, []);
 
-  // ファイルに書き出す（full：高画質の写真も含める）。写真を1枚ずつ文字にして、メモリを使いすぎないようにつなぐ
   async function exportFile(full) {
     setBusy(true); setMsg('書き出し中…（写真が多いと、時間がかかります）');
     try {
@@ -1411,13 +1280,10 @@ function DataScreen({ trips, records, onImport, onExit }) {
         <div>記録データ：約{(recBytes / 1048576).toFixed(2)} MB（上限の目安：約5MB）</div>
         {usage && <div>{usage}</div>}
         <div>最後のバックアップ：{days === null ? 'まだありません' : days === 0 ? '今日' : days + '日前'}</div>
-        {recBytes > 4 * 1048576 && <div className="msg">記録データが上限に近づいています。書き出して、不要な記録を整理してください。</div>}
       </div>
-
       <h3 className="subhead">書き出す（バックアップ・共有用）</h3>
       <button disabled={busy} onClick={() => exportFile(true)}>高画質の写真も含めて書き出す（推奨）</button>
       <button className="ghost fullw" disabled={busy} onClick={() => exportFile(false)}>軽量版で書き出す</button>
-
       <h3 className="subhead">取り込む（復元・ほかの人の記録を追加）</h3>
       <label>取り込み方
         <select value={mode} onChange={e => setMode(e.target.value)}>
@@ -1429,24 +1295,23 @@ function DataScreen({ trips, records, onImport, onExit }) {
         <input type="file" accept=".json,application/json" disabled={busy} onChange={importFile} />
       </label>
       {msg && <div className="dataMsg">{msg}</div>}
-
       <h3 className="subhead">記録を共有するには</h3>
-      <p className="dataNote">書き出したファイルを、メールなどのSNSで相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を見られます。</p>
+      <p className="dataNote">書き出したファイルを相手に送り、相手が「今の記録に追加する」で取り込むと、同じ旅行の記録を共有できます。</p>
     </div></div>
   );
 }
 
-// ---------- 画面：旅の写真（スライドショーと一覧） ----------
 function Gallery({ records, trips, currentTripId, onExit }) {
-  const [tripSel, setTripSel] = useState(String(currentTripId));   // 'all' か旅行のid
+  const [tripSel, setTripSel] = useState(String(currentTripId));
   const [kw, setKw] = useState('');
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [sec, setSec] = useState(4);
+  const [viewMode, setViewMode] = useState('slide'); // 'slide' | 'grid'
   const touchX = useRef(0);
-  // 日付・時刻の順に並べた、写真つきの記録
+  
   const list = useMemo(() => orderRecords(records.filter(r =>
-    r.photo && (tripSel === 'all' || String(r.tripId) === tripSel) && matchRecord(r, kw, trips))).flatMap(r => getPhotos(r).map((p, j) => ({ ...r, photo: p.t, pk: p.k, sub: j }))), [records, tripSel, kw]);   // 写真1枚ごとに、1コマ
+    r.photo && (tripSel === 'all' || String(r.tripId) === tripSel) && matchRecord(r, kw, trips))).flatMap(r => getPhotos(r).map((p, j) => ({ ...r, photo: p.t, pk: p.k, sub: j }))), [records, tripSel, kw]);
   const n = list.length;
   const cur = n ? list[Math.min(idx, n - 1)] : null;
   const src = useHQ(cur);
@@ -1454,16 +1319,16 @@ function Gallery({ records, trips, currentTripId, onExit }) {
   const go = d => setIdx(i => (i + d + n) % n);
 
   useEffect(() => { setIdx(0); }, [tripSel, kw]);
-  useEffect(() => {   // 自動で次の写真へ
-    if (!playing || n < 2) return;
+  useEffect(() => {
+    if (!playing || n < 2 || viewMode === 'grid') return;
     const t = setInterval(() => setIdx(i => (i + 1) % n), sec * 1000);
     return () => clearInterval(t);
-  }, [playing, n, sec]);
-  useEffect(() => {   // キーボードの左右キー
-    const onKey = e => { if (n && e.key === 'ArrowRight') go(1); if (n && e.key === 'ArrowLeft') go(-1); };
+  }, [playing, n, sec, viewMode]);
+  useEffect(() => {
+    const onKey = e => { if (n && viewMode === 'slide') { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [n]);
+  }, [n, viewMode]);
 
   return (
     <div className="screen"><div className="inner wide fade">
@@ -1474,9 +1339,20 @@ function Gallery({ records, trips, currentTripId, onExit }) {
           <option value="all">すべての旅行</option>
           {trips.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
         </select>
-        <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="キーワードで絞り込み（メモ・タイトルなど）" />
+        <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="キーワードで絞り込み" />
+        <div className="viewToggle">
+          <button className={viewMode === 'slide' ? 'on' : ''} onClick={() => setViewMode('slide')}>スライド</button>
+          <button className={viewMode === 'grid' ? 'on' : ''} onClick={() => setViewMode('grid')}>一覧</button>
+        </div>
       </div>
-      {n === 0 ? <p className="msg">条件に合う、写真つきの記録がありません</p> : (
+      
+      {n === 0 ? <p className="msg">条件に合う、写真つきの記録がありません</p> : viewMode === 'grid' ? (
+        <div className="albumGrid">
+          {list.map((r, i) => (
+            <HQImage key={r.id + '-' + r.sub} record={r} className="albumImg" onClick={() => { setIdx(i); setViewMode('slide'); setPlaying(false); }} />
+          ))}
+        </div>
+      ) : (
         <>
           <div className="slideStage" onTouchStart={e => { touchX.current = e.touches[0].clientX; }}
                onTouchEnd={e => { const d = e.changedTouches[0].clientX - touchX.current; if (Math.abs(d) > 50) go(d < 0 ? 1 : -1); }}>
@@ -1508,14 +1384,12 @@ function Gallery({ records, trips, currentTripId, onExit }) {
   );
 }
 
-// ---------- スマホ：左の欄（操作バー）を、上下にスライドする取っ手 ----------
 function SheetHandle({ targetRef }) {
   const drag = useRef(null);
-  const snaps = () => { const H = window.innerHeight; return [76, H * 0.48, Math.max(H * 0.6, Math.min(H * 0.86, H - 150))];   // 一番上は、検索バーが見える高さまで
-   };   // 小さく／半分／大きく
+  const snaps = () => { const H = window.innerHeight; return [76, H * 0.48, Math.max(H * 0.6, Math.min(H * 0.86, H - 150))]; };
   function down(e) {
     drag.current = { y: e.clientY, h: targetRef.current.offsetHeight };
-    targetRef.current.style.transition = 'none';   // ドラッグ中は、指に合わせて動かす
+    targetRef.current.style.transition = 'none';
     e.currentTarget.setPointerCapture(e.pointerId);
   }
   function move(e) {
@@ -1530,10 +1404,10 @@ function SheetHandle({ targetRef }) {
     drag.current = null;
     el.style.transition = '';
     const sn = snaps(), cur = el.offsetHeight;
-    let target = sn.reduce((a, b) => Math.abs(b - cur) < Math.abs(a - cur) ? b : a);   // いちばん近い高さに、ぴたっと止める
-    if (moved < 6) target = target === sn[1] ? sn[2] : sn[1];                          // タップ：半分↔大きく
+    let target = sn.reduce((a, b) => Math.abs(b - cur) < Math.abs(a - cur) ? b : a);
+    if (moved < 6) target = target === sn[1] ? sn[2] : sn[1];
     el.style.height = target + 'px';
-    if (Math.abs(target - startH) > 20) Sound.play('move');   // 高さが変わったときの音
+    if (Math.abs(target - startH) > 20) Sound.play('move');
   }
   return (
     <div className="sheetHandle" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -1541,22 +1415,23 @@ function SheetHandle({ targetRef }) {
   );
 }
 
-// ---------- アプリ全体 ----------
 function App() {
   const [tripData, setTripData] = useState(loadTrips);
   const [records, setRecords] = useState(() => loadRecords(tripData.trips));
-  const [selected, setSelected] = useState(null);     // 地図で選んだ場所
+  const [selected, setSelected] = useState(null);
   const [focus, setFocus] = useState(null);
-  const [fitKey, setFitKey] = useState(0);            // まとめて追加のあと地図を動かす合図
-  const [screen, setScreen] = useState('home');   // 'home'（タイトル）| 'register'（登録）| 'quiz'（クイズ）
+  const [fitKey, setFitKey] = useState(0);
+  const [screen, setScreen] = useState('home');
   const [tab, setTab] = useState('list');
-  const [mapPhoto, setMapPhoto] = useState(null);   // 地図のポップアップから拡大している写真
+  const [mapPhoto, setMapPhoto] = useState(null);
   const sidebarRef = useRef(null);
-  const [kw, setKw] = useState('');               // 検索のキーワード
-  const [allTrips, setAllTrips] = useState(false);   // すべての旅行から探す   // 左の欄：'add'（新規追加）| 'list'（記録一覧）
-  const [editingId, setEditingId] = useState(null);   // 編集中の記録のid
+  const [kw, setKw] = useState('');
+  const [allTrips, setAllTrips] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
-  // 状態が変わったら自動で保存
+  // 閲覧専用モード判定
+  const isViewOnly = useMemo(() => new URLSearchParams(window.location.search).has('view_only'), []);
+
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
     catch (e) { Dialog.alert('保存できませんでした（容量オーバーかもしれません）'); }
@@ -1565,8 +1440,7 @@ function App() {
 
   const currentId = tripData.currentTripId;
   const current = useMemo(() => records.filter(r => r.tripId === currentId), [records, currentId]);
-  const ordered = useMemo(() => orderRecords(current), [current]);   // 日付・時刻の順＋通し番号
-  // ---- 検索（番号は、検索前の順番のまま） ----
+  const ordered = useMemo(() => orderRecords(current), [current]);
   const searching = kw.trim() !== '';
   const shown = useMemo(() => searching ? ordered.filter(r => matchRecord(r, kw, tripData.trips)) : ordered, [ordered, kw, tripData.trips]);
   const otherHits = useMemo(() => searching && allTrips
@@ -1575,39 +1449,21 @@ function App() {
   const tripHits = searching ? tripData.trips.filter(t => t.id !== currentId && kw.trim().toLowerCase().split(/\s+/).every(w => t.name.toLowerCase().includes(w))) : [];
   const editing = records.find(r => r.id === editingId) || null;
 
-  // 画面の切り替え：タイトル／クイズのときは、ここで終わり
-  if (screen === 'home') {
-    return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} /></>;
-  }
-  if (screen === 'data') {
-    return <DataScreen trips={tripData.trips} records={records} onImport={importData} onExit={() => setScreen('home')} />;
-  }
-  if (screen === 'gallery') {
-    return <Gallery records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />;
-  }
-  if (screen === 'quiz') {
-    return (
-      <>
-        
-        <Quiz records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />
-      </>
-    );
-  }
+  if (screen === 'home') return <><Home trips={tripData.trips} records={records} onGo={setScreen} onReset={resetAll} isViewOnly={isViewOnly} /></>;
+  if (screen === 'data') return <DataScreen trips={tripData.trips} records={records} onImport={importData} onExit={() => setScreen('home')} />;
+  if (screen === 'gallery') return <Gallery records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} />;
+  if (screen === 'quiz') return <><Quiz records={records} trips={tripData.trips} currentTripId={currentId} onExit={() => setScreen('home')} /></>;
 
-  // バックアップファイルの取り込み（mode：'merge'＝追加 / 'replace'＝置き換え）
   async function importData(data, mode) {
     let baseTrips = tripData.trips, baseRecs = records;
-    if (mode === 'replace') {
-      await PhotoDB.clear();   // 古い高画質版を、すべて消す
-      baseTrips = []; baseRecs = [];
-    }
+    if (mode === 'replace') { await PhotoDB.clear(); baseTrips = []; baseRecs = []; }
     const tripIds = new Set(baseTrips.map(t => t.id)), recIds = new Set(baseRecs.map(r => r.id));
     let trips2 = [...baseTrips, ...(Array.isArray(data.trips) ? data.trips : []).filter(t => !tripIds.has(t.id))];
     if (!trips2.length) trips2 = [{ id: Date.now(), name: '最初の旅行' }];
     const fixed = data.records
-      .filter(r => validLatLng(r.lat, r.lng) && !recIds.has(r.id))   // 壊れた座標と、すでにある記録は飛ばす
+      .filter(r => validLatLng(r.lat, r.lng) && !recIds.has(r.id))
       .map(r => trips2.some(t => t.id === r.tripId) ? r : { ...r, tripId: trips2[0].id });
-    for (const r of fixed) for (const p of getPhotos(r)) {   // 高画質版を、この端末のIndexedDBへ戻す
+    for (const r of fixed) for (const p of getPhotos(r)) {
       const url = data.fulls && data.fulls[p.k];
       if (url) { try { await PhotoDB.put(p.k, await (await fetch(url)).blob()); } catch (e) {} }
     }
@@ -1617,11 +1473,10 @@ function App() {
     return fixed.length;
   }
   function switchTrip(id) { setEditingId(null); setTripData(td => ({ ...td, currentTripId: id })); }
-  function openFromOther(r) { switchTrip(r.tripId); setFocus({ id: r.id }); }   // ほかの旅行の記録へ移動
-
+  function openFromOther(r) { switchTrip(r.tripId); setFocus({ id: r.id }); }
   function addRecord(r) {
     Sound.play('save');
-    const { _full, _fulls, ...rec } = r;   // 高画質版は、記録（localStorage）ではなく、IndexedDBに保存
+    const { _full, _fulls, ...rec } = r;
     if (_full) PhotoDB.put(rec.id, _full);
     (_fulls || []).forEach(f => PhotoDB.put(f.k, f.blob));
     setRecords(prev => [...prev, { ...rec, tripId: currentId }]);
@@ -1639,20 +1494,18 @@ function App() {
     const { _full, _fulls, _removeKeys, ...ch } = changes;
     if (_full) PhotoDB.put(id, _full);
     (_fulls || []).forEach(f => PhotoDB.put(f.k, f.blob));
-    (_removeKeys || []).forEach(k => PhotoDB.delete(k));   // 外した写真の高画質版
+    (_removeKeys || []).forEach(k => PhotoDB.delete(k));
     setRecords(prev => prev.map(r => r.id === id ? { ...r, ...ch } : r));
     setEditingId(null); setSelected(null);
-    setTab('list');   // 更新したら、一覧へ戻る
-    if (ch.tripId && ch.tripId !== currentId) { setTripData(td => ({ ...td, currentTripId: ch.tripId })); setFocus({ id }); }   // 別の旅行へ移したら、その旅行を開く
+    setTab('list');
+    if (ch.tripId && ch.tripId !== currentId) { setTripData(td => ({ ...td, currentTripId: ch.tripId })); setFocus({ id }); }
   }
-  // スマホで操作バーが小さいとき、編集フォームが見える高さまで広げる
   function expandSheet() {
     const el = sidebarRef.current;
     if (el && window.matchMedia('(max-width: 700px)').matches && el.offsetHeight < window.innerHeight * 0.45) el.style.height = Math.round(window.innerHeight * 0.6) + 'px';
   }
-  function startEdit(id) { expandSheet(); setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }   // 編集は「新規追加」の欄のフォームを使う
+  function startEdit(id) { expandSheet(); setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }
   function cancelEdit() { setEditingId(null); setSelected(null); setTab('list'); }
-  // 地図で場所を選んだら、「新規追加」の欄へ切り替える
   function selectPlace(latlng) { setSelected(latlng); if (latlng) setTab('add'); }
   function deleteRecord(id) {
     Sound.play('delete');
@@ -1678,9 +1531,8 @@ function App() {
     setTripData({ trips: rest, currentTripId: rest[0].id });
     setEditingId(null); setSelected(null); setKw('');
   }
-  // すべての記録をリセット（旅行・写真・成績）。うっかり防止のため、2段階で確認する
   async function resetAll() {
-    if (!(await Dialog.confirm('すべての記録（旅行・写真・クイズの成績）を削除して、最初の状態に戻します。元に戻せません。\n\n先に「データの保存・共有」でバックアップすることをおすすめします。', { danger: true, okText: '続ける' }))) return;
+    if (!(await Dialog.confirm('すべての記録（旅行・写真・クイズの成績）を削除して、最初の状態に戻します。元に戻せません。', { danger: true, okText: '続ける' }))) return;
     const word = await Dialog.prompt('確認のため、「リセット」と入力してください。');
     if (word === null) return;
     if (word.trim() !== 'リセット') { await Dialog.alert('入力が違うため、リセットを中止しました。'); return; }
@@ -1705,30 +1557,32 @@ function App() {
       <div className="sidebar" ref={sidebarRef}>
         <SheetHandle targetRef={sidebarRef} />
         <div className="sidebarBody">
-        <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }}
-                className="ghost">‹ タイトルへ</button>
-        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v26</small></h1>
+        <button type="button" onClick={() => { setEditingId(null); setSelected(null); setScreen('home'); }} className="ghost">‹ タイトルへ</button>
+        <h1>旅行記録 <small style={{ fontSize: 11, color: '#999' }}>v27</small></h1>
         <label>旅行を選択
-          <select value={currentId}
-                  onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
+          <select value={currentId} onChange={e => { setEditingId(null); setTripData({ ...tripData, currentTripId: Number(e.target.value) }); }}>
             {tripData.trips.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </label>
-        <button onClick={addTrip}>＋ 新しい旅行</button>
-        <div className="tripTools">
+        
+        {!isViewOnly && <button onClick={addTrip}>＋ 新しい旅行</button>}
+        {!isViewOnly && <div className="tripTools">
           <button className="ghost" onClick={renameTrip}>名前を変更</button>
           <button className="ghost danger" onClick={deleteTrip}>この旅行を削除</button>
-        </div>
+        </div>}
 
-        <div className="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'add'} className={'tab' + (tab === 'add' ? ' on' : '')}
-                  onClick={() => setTab('add')}>新規追加</button>
-          <button role="tab" aria-selected={tab === 'list'} className={'tab' + (tab === 'list' ? ' on' : '')}
-                  onClick={() => setTab('list')}>記録一覧<span className="count">{current.length}</span></button>
-        </div>
+        {isViewOnly ? (
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected="true" className="tab on">記録一覧<span className="count">{current.length}</span></button>
+          </div>
+        ) : (
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'add'} className={'tab' + (tab === 'add' ? ' on' : '')} onClick={() => setTab('add')}>新規追加</button>
+            <button role="tab" aria-selected={tab === 'list'} className={'tab' + (tab === 'list' ? ' on' : '')} onClick={() => setTab('list')}>記録一覧<span className="count">{current.length}</span></button>
+          </div>
+        )}
 
-        {/* どちらの欄も、表示を切り替えるだけ（入力の途中の内容が消えないように） */}
-        <div className="tabPane" hidden={tab !== 'add'}>
+        <div className="tabPane" hidden={tab !== 'add' || isViewOnly}>
           <RecordForm selected={selected} onAdd={addRecord} trips={tripData.trips}
                       editing={editing} onUpdate={updateRecord} onCancel={cancelEdit} />
           <BulkImport onAdd={addRecords} selected={selected} />
@@ -1736,24 +1590,24 @@ function App() {
 
         <div className="tabPane" hidden={tab !== 'list'}>
           <div className="searchRow">
-            <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="メモ・タイトル・日付などで探す（空白で複数）" />
+            <input type="search" value={kw} onChange={e => setKw(e.target.value)} placeholder="メモ・タイトル・日付などで探す" />
             <label className="inlineCheck">
               <input type="checkbox" checked={allTrips} onChange={e => setAllTrips(e.target.checked)} />すべての旅行から探す
             </label>
             {searching && <div className="searchCount">この旅行：{shown.length}件{allTrips ? ' ／ ほかの旅行：' + otherHits.length + '件' : ''}</div>}
             {tripHits.map(t => <button key={t.id} className="chip" onClick={() => switchTrip(t.id)}>旅行「{t.name}」を開く</button>)}
           </div>
-          {searching && shown.length === 0 && <div className="empty">この旅行には、該当する記録がありません</div>}
+          {searching && shown.length === 0 && <div className="empty">該当する記録がありません</div>}
           {current.length === 0 && (
             <div className="empty">
-              この旅行には、まだ記録がありません。
-              <button className="ghost" onClick={() => setTab('add')}>新規追加へ</button>
+              まだ記録がありません。
+              {!isViewOnly && <button className="ghost" onClick={() => setTab('add')}>新規追加へ</button>}
             </div>
           )}
           {shown.map((r, i) => (
             <React.Fragment key={r.id}>
               {(i === 0 || shown[i - 1].date !== r.date) && <div className="dayLabel">{r.date}</div>}
-              <RecordCard record={r} isEditing={r.id === editingId}
+              <RecordCard record={r} isViewOnly={isViewOnly} isEditing={r.id === editingId}
                         onFocus={id => setFocus({ id })} onEdit={startEdit} onDelete={deleteRecord} />
             </React.Fragment>
           ))}
@@ -1769,7 +1623,7 @@ function App() {
             </>
           )}
         </div>
-        <p style={{ fontSize: 11, color: '#888' }}>場所の検索・地図：© OpenStreetMap contributors</p>
+        <p style={{ fontSize: 11, color: '#888' }}>場所の検索・地図：© OpenStreetMap</p>
         </div>
       </div>
       <MapView records={shown} onPhoto={setMapPhoto} tripId={currentId} fitKey={fitKey}
@@ -1779,14 +1633,12 @@ function App() {
   );
 }
 
-// ---------- 音のオン／オフボタン（画面の右下） ----------
 function SoundToggle() {
   const [on, setOn] = useState(Sound.enabled);
   function toggle() {
     const v = !on;
-    setOn(v);
-    Sound.setEnabled(v);
-    if (v) Sound.play('click');   // オンにしたとき、音が出ることをすぐ確認できる
+    setOn(v); Sound.setEnabled(v);
+    if (v) Sound.play('click');
   }
   return (
     <button data-silent="1" className="soundBtn" onClick={toggle} aria-label="効果音のオン／オフ" title={on ? '効果音：オン' : '効果音：オフ'}>
@@ -1800,7 +1652,6 @@ function SoundToggle() {
   );
 }
 
-// ---------- エラーが起きたとき、真っ白にせず内容を表示 ----------
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
@@ -1809,9 +1660,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ padding: 16 }}>
           <h2>エラーが発生しました</h2>
-          <p style={{ color: '#c0392b', wordBreak: 'break-all' }}>
-            {String(this.state.error.message || this.state.error)}
-          </p>
+          <p style={{ color: '#c0392b', wordBreak: 'break-all' }}>{String(this.state.error.message || this.state.error)}</p>
           <button onClick={() => location.reload()}>再読み込み</button>
         </div>
       );
