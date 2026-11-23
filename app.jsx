@@ -733,8 +733,8 @@ function Home({ trips, records, onGo, onReset, isViewOnly, onSetViewOnly }) {
             <button className="ghost" style={{marginTop: 8}} onClick={() => onSetViewOnly(false)}>編集モードに戻る</button>
           </div>
         )}
-        <button className="homeBtn" disabled={isViewOnly} onClick={() => onGo('register')}>
-          <span className="homeBtnTitle">旅行を記録する</span><small>地図と写真で旅の記録を登録・編集</small>
+        <button className="homeBtn" onClick={() => onGo('register')}>
+          <span className="homeBtnTitle">{isViewOnly ? '旅行の記録を見る' : '旅行を記録する'}</span><small>{isViewOnly ? '地図と写真で旅の記録を閲覧します' : '地図と写真で旅の記録を登録・編集'}</small>
         </button>
         <button className="homeBtn" disabled={photoCount < 2} onClick={() => onGo('quiz')}>
           <span className="homeBtnTitle">旅行の記憶クイズに挑戦</span>
@@ -1535,7 +1535,7 @@ function App() {
   }
   function startEdit(id) { expandSheet(); setSelected(null); setEditingId(id); setFocus({ id }); setTab('add'); }
   function cancelEdit() { setEditingId(null); setSelected(null); setTab('list'); }
-  function selectPlace(latlng) { setSelected(latlng); if (latlng) setTab('add'); }
+  function selectPlace(latlng) { if (isViewOnly) return; setSelected(latlng); if (latlng) setTab('add'); }
   function deleteRecord(id) {
     Sound.play('delete');
     const rec = records.find(r => r.id === id);
