@@ -1287,6 +1287,17 @@ function DataScreen({ trips, records, onImport, onExit }) {
       if (data.app !== 'travel-log' || !Array.isArray(data.records)) throw new Error('このアプリのバックアップファイルではありません');
       
       const asReadOnly = (data.metadata && data.metadata.mode === 'readOnly') || mode === 'force_view';
+      
+      if (!asReadOnly) {
+        setBusy(false);
+        setMsg('');
+        if (!(await Dialog.confirm('閲覧専用モードで取り込まれていません。このまま続けますか？', { okText: '続ける' }))) {
+          return;
+        }
+        setBusy(true);
+        setMsg('読み込み中…');
+      }
+
       const n = await onImport(data, mode);
       setMsg(asReadOnly ? '閲覧専用モードとしてデータを取り込みました。' : n + '件の記録を取り込みました。');
     } catch (err) { setMsg('取り込めませんでした：' + (err.message || err)); }
